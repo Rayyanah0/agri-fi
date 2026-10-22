@@ -69,6 +69,30 @@ export class PricesService implements OnModuleInit, OnModuleDestroy {
     return this.refreshAndCachePrice('cache-miss');
   }
 
+  async getPriceSnapshot(assetSymbol?: string): Promise<PriceSnapshot> {
+    const normalizedSymbol = (assetSymbol ?? 'XLM/USDC').toUpperCase();
+    const cached = await this.readCachedRate();
+
+    if (cached !== null) {
+      this.lastKnownRate = cached;
+      return {
+        rate: cached,
+        source: 'cache',
+        fetchedAt: new Date().toISOString(),
+      };
+    }
+
+    const rate = await this.refreshAndCachePrice(
+      `snapshot:${normalizedSymbol}`,
+    );
+
+    return {
+      rate,
+      source: this.lastKnownRate !== null ? 'coingecko' : 'fallback',
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
   async refreshAndCachePrice(reason: string): Promise<number> {
     try {
       const liveRate = await this.fetchLiveRate();

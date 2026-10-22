@@ -72,6 +72,28 @@ resource "aws_ecs_task_definition" "backend" {
           value = "info"
         },
         {
+          name  = "SECRET_MANAGEMENT_SECRET_IDS"
+          value = join(",", [
+            aws_secretsmanager_secret.db_user.arn,
+            aws_secretsmanager_secret.db_password.arn,
+            aws_secretsmanager_secret.jwt_secret.arn,
+            aws_secretsmanager_secret.stellar_secret.arn,
+            aws_secretsmanager_secret.rds_credentials.arn
+          ])
+        },
+        {
+          name  = "SECRET_ROTATION_REQUIRED_IDS"
+          value = aws_secretsmanager_secret.rds_credentials.arn
+        },
+        {
+          name  = "APP_SECRET_SECRET_ID"
+          value = aws_secretsmanager_secret.rds_credentials.arn
+        },
+        {
+          name  = "APP_SECRET_ENV_KEYS"
+          value = "DATABASE_USER=username,DATABASE_PASSWORD=password"
+        },
+        {
           name  = "DATABASE_HOST"
           value = aws_db_instance.postgres.address
         },
@@ -509,6 +531,41 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
           "s3:PutObject"
         ]
         Resource = "${aws_s3_bucket.kyc_documents.arn}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:DescribeSecret",
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = [
+          aws_secretsmanager_secret.db_user.arn,
+          aws_secretsmanager_secret.db_password.arn,
+          aws_secretsmanager_secret.jwt_secret.arn,
+          aws_secretsmanager_secret.stellar_secret.arn,
+          aws_secretsmanager_secret.rds_credentials.arn
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = ["secretsmanager:RotateSecret"]
+        Resource = aws_secretsmanager_secret.rds_credentials.arn
+      },
+      {
+        Effect    = "Allow"
+        Action    = ["secretsmanager:UpdateSecretVersionStage"]
+        Resource = [
+          aws_secretsmanager_secret.db_user.arn,
+          aws_secretsmanager_secret.db_password.arn,
+          aws_secretsmanager_secret.jwt_secret.arn,
+          aws_secretsmanager_secret.stellar_secret.arn,
+          aws_secretsmanager_secret.rds_credentials.arn
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = ["kms:Decrypt"]
+        Resource = aws_kms_key.rds_credentials.arn
       }
     ]
   })

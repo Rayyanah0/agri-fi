@@ -1,0 +1,110 @@
+name: Database Migrations
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/database/migrations/**'
+      - 'backend/src/database/migration-tooling/**'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/src/database/migrations/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: staging
+        type: choice
+        options: [staging, production]
+      command:
+        description: 'Migration command'
+        required: true
+        default: up
+        type: choice
+        options: [up, down, status]
+
+jobs:
+  lint-and-test:
+    name: Lint & reversibility test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: agri_fi_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      NODE_ENV: test
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: agri_fi_test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/agri_fi_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run check:migration-linearity
+      - run: npm run migrate:lint
+      - name: Apply all migrations from scratch
+        run: npm run migrate:up -- --no-backup
+      - name: Roll back last 3 and re-apply (rollback test)
+        run: |
+          npm run migrate:down -- --steps 3 --no-backup
+          npm run migrate:up -- --no-backup
+      - run: npm run migrate:analytics
+
+  deploy:
+    name: Run migrations (${{ github.event.inputs.environment || 'staging' }})
+    needs: lint-and-test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      NODE_ENV: ${{ github.event.inputs.environment || 'staging' }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DB_HOST: ${{ secrets.DB_HOST }}
+      DB_PORT: ${{ secrets.DB_PORT }}
+      DB_USERNAME: ${{ secrets.DB_USERNAME }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DB_NAME: ${{ secrets.DB_NAME }}
+      MIGRATION_BACKUP_DIR: ${{ github.workspace }}/migration-backups
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - run: npm ci
+      - name: Staging reversibility test
+        if: env.NODE_ENV == 'staging'
+        run: npm run migrate:test
+      - name: Execute migration
+        run: npm run migrate:${{ github.event.inputs.command || 'up' }} -- --restore-on-fail
+      - name: Upload pre-migration backup
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pre-migration-backup-${{ github.run_id }}
+          path: migration-backups/
+          retention-days: 14
+      - run: npm run migrate:status
+      - run: npm run migrate:analytics

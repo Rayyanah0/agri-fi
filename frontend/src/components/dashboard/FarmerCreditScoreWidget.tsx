@@ -64,7 +64,8 @@ export default function FarmerCreditScoreWidget() {
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Institutional rating determined by on-time delivery, KYC longevity, and sensor compliance.
+            Institutional rating determined by on-time delivery, repayment history, deal
+            completion, shipment accuracy, milestone compliance, and document quality.
           </p>
         </div>
 
@@ -89,8 +90,8 @@ export default function FarmerCreditScoreWidget() {
         </div>
         <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-medium">
           <span>300 (Poor)</span>
-          <span>580 (Fair)</span>
-          <span>670 (Good)</span>
+          <span>650 (Fair)</span>
+          <span>700 (Good)</span>
           <span>750+ (Excellent)</span>
         </div>
       </div>

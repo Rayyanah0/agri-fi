@@ -22,6 +22,11 @@ import { ConfigModule } from '@nestjs/config';
  *   - nodejs_memory_rss_bytes         (resident set size)
  *   - db_connections_total            (active + idle DB connections)
  *   - db_connections_idle             (idle DB connections)
+ *   - db_connections_waiting         (clients waiting for a pooled connection)
+ *   - db_connections_checked_out     (connections currently in use)
+ *   - db_connections_oldest_checkout_seconds (age of the longest checkout)
+ *   - db_connection_acquire_wait_seconds_avg (mean acquisition latency)
+ *   - db_pool_healthy                 (periodic database health check)
  */
 class MetricsCollector implements OnApplicationBootstrap {
   private readonly logger = new Logger(MetricsCollector.name);
@@ -37,6 +42,16 @@ class MetricsCollector implements OnApplicationBootstrap {
     private readonly dbTotal: Gauge<string>,
     @InjectMetric('db_connections_idle')
     private readonly dbIdle: Gauge<string>,
+    @InjectMetric('db_connections_waiting')
+    private readonly dbWaiting: Gauge<string>,
+    @InjectMetric('db_connections_checked_out')
+    private readonly dbCheckedOut: Gauge<string>,
+    @InjectMetric('db_connections_oldest_checkout_seconds')
+    private readonly dbOldestCheckout: Gauge<string>,
+    @InjectMetric('db_connection_acquire_wait_seconds_avg')
+    private readonly dbAcquireWait: Gauge<string>,
+    @InjectMetric('db_pool_healthy')
+    private readonly dbHealthy: Gauge<string>,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -58,6 +73,11 @@ class MetricsCollector implements OnApplicationBootstrap {
       const stats = await this.dbConfig.queryPoolStats();
       this.dbTotal.set(stats.totalConnections);
       this.dbIdle.set(stats.idleConnections);
+      this.dbWaiting.set(stats.waitingClients);
+      this.dbCheckedOut.set(stats.checkedOutConnections);
+      this.dbOldestCheckout.set(stats.oldestCheckedOutSeconds);
+      this.dbAcquireWait.set(stats.averageAcquireWaitSeconds);
+      this.dbHealthy.set(this.dbConfig.isHealthy ? 1 : 0);
     } catch (err) {
       this.logger.warn(`Failed to collect metrics: ${(err as Error).message}`);
     }
@@ -112,6 +132,26 @@ class MetricsCollector implements OnApplicationBootstrap {
     makeGaugeProvider({
       name: 'db_connections_idle',
       help: 'Number of idle database connections currently in the pool.',
+    }),
+    makeGaugeProvider({
+      name: 'db_connections_waiting',
+      help: 'Number of clients waiting to acquire a database connection.',
+    }),
+    makeGaugeProvider({
+      name: 'db_connections_checked_out',
+      help: 'Number of database connections currently checked out by clients.',
+    }),
+    makeGaugeProvider({
+      name: 'db_connections_oldest_checkout_seconds',
+      help: 'Age in seconds of the oldest currently checked-out database connection.',
+    }),
+    makeGaugeProvider({
+      name: 'db_connection_acquire_wait_seconds_avg',
+      help: 'Average time spent acquiring a database connection, in seconds.',
+    }),
+    makeGaugeProvider({
+      name: 'db_pool_healthy',
+      help: 'Whether the most recent periodic database health check succeeded (1=yes, 0=no).',
     }),
 
     // ── Stellar metrics ────────────────────────────────────────────────────────

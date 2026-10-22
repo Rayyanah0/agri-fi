@@ -22,6 +22,10 @@ const IGNORED_VARS = new Set([
   'userId',
   'correlationId',
   'token',
+  // Inherited by the child processes the self-healing engine spawns
+  // (remediation scripts and the Ansible playbook).
+  'PATH',
+  'HOME',
 ]);
 
 function walk(dir) {

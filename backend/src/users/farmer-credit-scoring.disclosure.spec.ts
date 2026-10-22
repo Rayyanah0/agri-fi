@@ -73,14 +73,18 @@ describe('FarmerCreditScoringService - Disclosure, Permissions & Weighting (#101
         FACTOR_WEIGHTS.dealCompletion +
         FACTOR_WEIGHTS.defaultRate +
         FACTOR_WEIGHTS.shipmentMilestone +
+        FACTOR_WEIGHTS.shipmentAccuracy +
+        FACTOR_WEIGHTS.documentQuality +
         FACTOR_WEIGHTS.kycAge;
 
       expect(sum).toBeCloseTo(1.0, 5);
-      expect(FACTOR_WEIGHTS.onTimeRepayment).toBe(0.35);
-      expect(FACTOR_WEIGHTS.dealCompletion).toBe(0.20);
+      expect(FACTOR_WEIGHTS.onTimeRepayment).toBe(0.25);
+      expect(FACTOR_WEIGHTS.dealCompletion).toBe(0.15);
       expect(FACTOR_WEIGHTS.defaultRate).toBe(0.20);
-      expect(FACTOR_WEIGHTS.shipmentMilestone).toBe(0.15);
-      expect(FACTOR_WEIGHTS.kycAge).toBe(0.10);
+      expect(FACTOR_WEIGHTS.shipmentMilestone).toBe(0.10);
+      expect(FACTOR_WEIGHTS.shipmentAccuracy).toBe(0.15);
+      expect(FACTOR_WEIGHTS.documentQuality).toBe(0.10);
+      expect(FACTOR_WEIGHTS.kycAge).toBe(0.05);
     });
 
     it('calculates 850 score for perfect factors across all dimensions', () => {
@@ -89,6 +93,8 @@ describe('FarmerCreditScoringService - Disclosure, Permissions & Weighting (#101
         dealCompletionRate: 1.0,
         dealDefaultRate: 0.0, // 0 default = 100% inverted
         shipmentMilestoneComplianceRate: 1.0,
+        shipmentAccuracyRate: 1.0,
+        documentQualityRate: 1.0,
         kycVerificationAgeDays: 365,
       };
 
@@ -104,6 +110,8 @@ describe('FarmerCreditScoringService - Disclosure, Permissions & Weighting (#101
         dealCompletionRate: 0.0,
         dealDefaultRate: 1.0, // 100% default = 0% inverted
         shipmentMilestoneComplianceRate: 0.0,
+        shipmentAccuracyRate: 0.0,
+        documentQualityRate: 0.0,
         kycVerificationAgeDays: 0,
       };
 
@@ -200,6 +208,8 @@ describe('FarmerCreditScoringService - Disclosure, Permissions & Weighting (#101
         dealCompletionRate: 0.60,  // Weak completion
         dealDefaultRate: 0.15,     // Has defaults
         shipmentMilestoneComplianceRate: 0.50, // Poor milestone logging
+        shipmentAccuracyRate: 0.40, // Milestones rarely verified
+        documentQualityRate: 0.45,  // Documents often rejected
         kycVerificationAgeDays: 30, // New KYC
       };
 

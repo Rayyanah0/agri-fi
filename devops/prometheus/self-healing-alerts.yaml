@@ -1,0 +1,339 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Self-healing infrastructure alert rules (#1194)
+#
+# These rules feed the self-healing engine. Every alert carries the
+# `self_healing: "true"` label so that the backend can pick it up from the
+# Prometheus `/api/v1/alerts` API, together with:
+#
+#   issue_type   the issue classification used by the root cause analysis
+#   component    the logical component the issue belongs to
+#   remediation  the remediation action the engine would apply
+#
+# The `for` duration doubles as the dwell time of the detector: an alert only
+# becomes an issue once it has been firing for that long, which prevents the
+# engine from reacting to short-lived spikes.
+# ─────────────────────────────────────────────────────────────────────────────
+groups:
+  - name: agri_fi_self_healing
+    interval: 30s
+    rules:
+      # ── Pod crash loop (#1194) ──────────────────────────────────────────────
+      - alert: SelfHealingPodCrashLoop
+        expr: |
+          sum by (namespace, pod) (
+            increase(kube_pod_container_status_restarts_total{namespace="agri-fi"}[15m])
+          ) > 3
+        for: 10m
+        labels:
+          severity: critical
+          team: platform
+          owner: platform-oncall
+          runbook: "docs/devops/self-healing.md"
+          component: kubernetes
+          self_healing: "true"
+          issue_type: pod_restart_loop
+          remediation: restart_pod
+        annotations:
+          summary: "Pod {{ $labels.pod }} is restarting repeatedly"
+          description: >
+            The container in pod {{ $labels.namespace }}/{{ $labels.pod }} restarted
+            more than three times in the last 15 minutes. The self-healing engine
+            analyses the previous container state and restarts the pod.
+
+      # ── Pod not ready (#1194) ───────────────────────────────────────────────
+      - alert: SelfHealingPodNotReady
+        expr: |
+          min by (namespace, pod) (
+            kube_pod_status_ready{namespace="agri-fi",condition="true"}
+          ) == 0
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          owner: platform-oncall
+          runbook: "docs/devops/self-healing.md"
+          component: kubernetes
+          self_healing: "true"
+          issue_type: pod_failure
+          remediation: restart_pod
+        annotations:
+          summary: "Pod {{ $labels.pod }} has been unready for 5 minutes"
+          description: >
+            Pod {{ $labels.namespace }}/{{ $labels.pod }} has not been ready since
+            at least five minutes ago. The self-healing engine inspects the pod
+            state and restarts it when the cause is recoverable.
+
+      # ── Deployment without available replicas (#1194) ───────────────────────
+      - alert: SelfHealingDeploymentUnavailable
+        expr: |
+          sum by (namespace, deployment) (
+            kube_deployment_status_replicas_unavailable{namespace="agri-fi"}
+          ) > 0
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          owner: platform-oncall
+          runbook: "docs/devops/self-healing.md"
+          component: kubernetes
+          self_healing: "true"
+          issue_type: service_down
+          remediation: restart_pod
+        annotations:
+          summary: "Deployment {{ $labels.deployment }} has unavailable replicas"
+          description: >
+            Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has at least
+            one replica that failed to become available. The self-healing engine
+            checks the affected pods.
+
+      # ── Container memory pressure (#1194) ───────────────────────────────────
+      - alert: SelfHealingContainerMemoryHigh
+        expr: |
+          max by (namespace, pod) (
+            container_memory_working_set_bytes{namespace="agri-fi",container!="",container!="POD"}
+            /
+            container_spec_memory_limit_bytes{namespace="agri-fi",container!="",container!="POD"}
+          ) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+          owner: platform-oncall
+          runbook: "docs/devops/self-healing.md"
+          component: kubernetes
+          self_healing: "true"
+          issue_type: high_memory
+          remediation: restart_pod
+        annotations:
+          summary: "Container of pod {{ $labels.pod }} uses more than 85% of its memory limit"
+          description: >
+            The working set of pod {{ $labels.namespace }}/{{ $labels.pod }} is above
+            85% of its memory limit for more than ten minutes.
+
+      - alert: SelfHealingContainerMemoryCritical
+        expr: |
+          max by (namespace, pod) (
+            container_memory_working_set_bytes{namespace="agri-fi",container!="",container!="POD"}
+            /
+            container_spec_memory_limit_bytes{namespace="agri-fi",container!="",container!="POD"}
+          ) > 0.95
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          owner: platform-oncall
+          runbook: "docs/devops/self-healing.md"
+          component: kubernetes
+          self_healing: "true"
+          issue_type: high_memory
+          remediation: restart_pod
+        annotations:
+          summary: "Container of pod {{ $labels.pod }} uses more than 95% of its memory limit"
+          description: >
+            The working set of pod {{ $labels.namespace }}/{{ $labels.pod }} is above
+            95% of its memory limit and the container risks being OOM-killed.
+
+      # ── Node disk usage (#1194) ────────────────────────────────────────────
+      - alert: SelfHealingNodeDiskFull
+        expr: |
+          max by (instance) (
+            node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}
+            /
+            node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}
+          ) < 0.1
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          owner: platform-oncall
+          runbook: "docs/devops/self-healing.md"
+          component: host
+          self_healing: "true"
+          issue_type: disk_full
+          remediation: cleanup_disk
+        annotations:
+          summary: "Filesystem of {{ $labels.instance }} is more than 90% full"
+          description: >
+            Less than 10% of the root filesystem of {{ $labels.instance }} is free.
+            The self-healing engine runs the disk cleanup remediation, which
+            requires an approval because it removes files.
+
+      - alert: SelfHealingNodeDiskWarning
+        expr: |
+          max by (instance) (
+            node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}
+            /
+            node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}
+          ) < 0.2
+        for: 15m
+        labels:
+          severity: warning
+          team: platform
+          owner: platform-oncall
+          runbook: "docs/devops/self-healing.md"
+          component: host
+          self_healing: "true"
+          issue_type: disk_full
+          remediation: cleanup_disk
+        annotations:
+          summary: "Filesystem of {{ $labels.instance }} is more than 80% full"
+          description: >
+            Less than 20% of the root filesystem of {{ $labels.instance }} is free.
+
+      # ── Node memory pressure (#1194) ───────────────────────────────────────
+      - alert: SelfHealingNodeMemoryPressure
+        expr: |
+          min by (instance) (
+            node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes
+          ) < 0.1
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          owner: platform-oncall
+          runbook: "docs/devops/self-healing.md"
+          component: host
+          self_healing: "true"
+          issue_type: high_memory
+        annotations:
+          summary: "Node {{ $labels.instance }} is under memory pressure"
+          description: >
+            Less than 10% of the memory of {{ $labels.instance }} is available. The
+            node is at risk of an OOM kill of one of its workloads.
+
+      # ── Backend availability (#1194) ───────────────────────────────────────
+      - alert: SelfHealingBackendErrorRate
+        expr: |
+          sum(rate(http_request_errors_total{status_code=~"5.."}[5m])) > 1
+        for: 5m
+        labels:
+          severity: critical
+          team: backend
+          owner: backend-oncall
+          runbook: "docs/devops/self-healing.md"
+          component: backend
+          self_healing: "true"
+          issue_type: service_down
+          remediation: restart_service
+        annotations:
+          summary: "Backend returns 5xx responses at a sustained rate"
+          description: >
+            The backend produced more than one 5xx response per second over five
+            minutes. A rollout restart is proposed but requires an approval.
+
+      - alert: SelfHealingBackendLatencyHigh
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le) (rate(http_request_duration_seconds_bucket[5m]))
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+          owner: backend-oncall
+          runbook: "docs/devops/self-healing.md"
+          component: backend
+          self_healing: "true"
+          issue_type: service_degradation
+        annotations:
+          summary: "Backend p99 latency is above two seconds"
+          description: >
+            The 99th percentile request latency of the backend has been above two
+            seconds for more than ten minutes.
+
+      # ── Queue backlog (#1194) ───────────────────────────────────────────────
+      - alert: SelfHealingQueueBacklog
+        expr: rabbitmq_queue_messages{queue="escrow.process"} > 500
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+          owner: backend-oncall
+          runbook: "docs/devops/self-healing.md"
+          component: rabbitmq
+          self_healing: "true"
+          issue_type: queue_backlog
+          remediation: scale_up
+        annotations:
+          summary: "Escrow queue backlog is above 500 messages"
+          description: >
+            The escrow processing queue holds more than 500 pending messages for
+            more than five minutes. The self-healing engine scales the consumer
+            deployment out by one replica.
+
+      # ── Cache and database pressure (#1194) ─────────────────────────────────
+      - alert: SelfHealingRedisMemoryHigh
+        expr: |
+          max by (instance) (
+            (redis_memory_used_bytes / redis_memory_max_bytes) * 100
+          ) > 85
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+          owner: backend-oncall
+          runbook: "docs/devops/self-healing.md"
+          component: redis
+          self_healing: "true"
+          issue_type: high_memory
+        annotations:
+          summary: "Redis memory usage is above 85% of maxmemory"
+          description: >
+            The Redis instance {{ $labels.instance }} uses more than 85% of its
+            configured maxmemory limit.
+
+      - alert: SelfHealingDatabaseSaturation
+        expr: agri_fi:pg_connections_pct > 85
+        for: 5m
+        labels:
+          severity: critical
+          team: backend
+          owner: backend-oncall
+          runbook: "docs/devops/self-healing.md"
+          component: database
+          self_healing: "true"
+          issue_type: database_saturation
+        annotations:
+          summary: "Database connections are above 85% of max_connections"
+          description: >
+            The active PostgreSQL connections are above 85% of the configured
+            max_connections. Scaling the application out would increase the
+            pressure, so the engine escalates to an operator instead.
+
+      - alert: SelfHealingPgBouncerPoolHigh
+        expr: agri_fi:pgbouncer_server_pool_pct > 85
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+          owner: backend-oncall
+          runbook: "docs/devops/self-healing.md"
+          component: pgbouncer
+          self_healing: "true"
+          issue_type: database_saturation
+        annotations:
+          summary: "PgBouncer server pool is above 85% utilisation"
+          description: >
+            The PgBouncer server pool is above 85% utilisation on
+            {{ $labels.instance }}.
+
+      # ── Certificate expiry (#1194) ──────────────────────────────────────────
+      - alert: SelfHealingCertificateExpiring
+        expr: (probe_ssl_earliest_cert_expiry - time()) < 1209600
+        for: 0m
+        labels:
+          severity: warning
+          team: platform
+          owner: platform-oncall
+          runbook: "docs/devops/self-healing.md"
+          component: ingress
+          self_healing: "true"
+          issue_type: certificate_expiry
+          remediation: custom_script
+        annotations:
+          summary: "TLS certificate expires in less than 14 days"
+          description: >
+            The TLS certificate of {{ $labels.instance }} expires in less than
+            fourteen days. The engine proposes the registered certificate renewal
+            script, which requires an approval.

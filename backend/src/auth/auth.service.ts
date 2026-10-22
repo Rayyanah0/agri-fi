@@ -45,6 +45,10 @@ import * as QRCode from 'qrcode';
 import { TokenBlocklistService } from './token-blocklist.service';
 import { SecurityThreatService } from './security-threat.service';
 import { EmailSequenceService } from '../email-sequence/email-sequence.service';
+import { KycRulesService } from '../kyc-rules/kyc-rules.service';
+import { KycCustomerType } from '../kyc-rules/entities/kyc-jurisdiction-rule.entity';
+import { BehavioralRiskService } from './behavioral-risk.service';
+import { BehavioralRiskSignalDto } from './dto/behavioral-risk-signal.dto';
 
 const LOCKOUT_MAX_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
@@ -90,6 +94,9 @@ export class AuthService {
     private readonly securityThreat: SecurityThreatService,
     @Optional() private readonly emailSequenceService: EmailSequenceService,
     @Optional() private readonly auditService: AuditService,
+    @Optional() private readonly kycRulesService: KycRulesService,
+    @Optional()
+    private readonly behavioralRiskService?: BehavioralRiskService,
   ) {
     const network = this.configService.get<string>(
       'STELLAR_NETWORK',
@@ -947,6 +954,25 @@ export class AuthService {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found.');
 
+    // Enforce country-level KYC document matrix when a jurisdiction is provided (#1019)
+    if (dto.countryCode && this.kycRulesService) {
+      await this.kycRulesService.assertValidSubmission({
+        countryCode: dto.countryCode,
+        customerType: dto.isCorporate
+          ? KycCustomerType.CORPORATE
+          : KycCustomerType.INDIVIDUAL,
+        documentType: dto.documentType,
+        idNumber: dto.idNumber,
+        documentExpiresAt: dto.documentExpiresAt,
+        hasGovernmentIdFront: Boolean(dto.governmentIdUrl),
+        hasGovernmentIdBack: Boolean(dto.identityDocumentBackUrl),
+        hasProofOfAddress: Boolean(dto.proofOfAddressUrl),
+        hasSelfie: Boolean(dto.selfieUrl),
+        hasBusinessLicense: Boolean(dto.businessLicenseUrl),
+        hasArticlesOfIncorporation: Boolean(dto.articlesOfIncorporationUrl),
+      });
+    }
+
     const isAutoApprove =
       this.configService.get<string>('KYC_AUTO_APPROVE') === 'true';
 
@@ -1324,6 +1350,60 @@ export class AuthService {
   }
 
 
+
+  // ── behavioral biometrics (#1222) ─────────────────────────────────────────
+
+  /**
+   * Accepts a client-computed behavioral risk signal (typing dynamics, mouse
+   * trajectory, device usage) and returns an adaptive-authentication decision.
+   *
+   * Behavioral data is evaluated in-memory only — no raw behavioral samples
+   * are persisted or sent to the cloud (privacy requirement).
+   */
+  async evaluateBehavioralRisk(
+    userId: string,
+    dto: BehavioralRiskSignalDto,
+  ): Promise<{
+    decision: 'allow' | 'require_mfa' | 'force_reauth';
+    riskScore: number;
+    reasons: string[];
+  }> {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found.');
+
+    if (!this.behavioralRiskService) {
+      // Fail open to the existing static auth posture when the behavioral
+      // subsystem is not wired (e.g. feature disabled).
+      return { decision: 'allow', riskScore: 0, reasons: [] };
+    }
+
+    const result = await this.behavioralRiskService.evaluate(userId, dto);
+
+    // High-risk sessions invalidate outstanding tokens so the client is
+    // forced through a fresh authentication (re-auth) flow.
+    if (result.decision === 'force_reauth') {
+      user.tokenVersion = (user.tokenVersion ?? 0) + 1;
+      await this.userRepo.save(user);
+    }
+
+    try {
+      await this.auditService?.logEvent({
+        actorId: userId,
+        actorRole: user.role,
+        route: 'POST /auth/behavioral/risk',
+        statusCode: 200,
+        requestDetails: {
+          decision: result.decision,
+          riskScore: result.riskScore,
+          reasons: result.reasons,
+        },
+      });
+    } catch (err: any) {
+      this.loggerWarn('behavioral risk audit failed', err);
+    }
+
+    return result;
+  }
 
   // ── account unlock ────────────────────────────────────────────────────────
 

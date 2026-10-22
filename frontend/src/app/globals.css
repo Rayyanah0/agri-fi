@@ -5,33 +5,301 @@
 /* ── Google Fonts: Inter ──────────────────────────────────────────────────── */
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap");
 
+/* ============================================================================
+   Theme token architecture — issue #1170
+   ----------------------------------------------------------------------------
+   Every colour is stored as an *HSL channel triplet* (`142 50% 24%`) so that
+   Tailwind can compose it with an alpha channel via
+   `hsl(var(--color-primary) / <alpha-value>)`.
+
+   The tokens are layered:
+
+     1. `:root, .theme-scope`        → light scheme defaults
+     2. `.dark`                      → dark scheme overrides
+     3. `.high-contrast`             → dedicated high-contrast scheme
+     4. `[data-contrast="…"]`        → contrast tuning (normal/high/extra-high)
+     5. `[data-accent="…"]`          → brand / accent palette
+     6. `[data-font-size="…"]`       → root font scale
+
+   The scheme selectors are intentionally *not* scoped to `html` so that a
+   `.theme-scope` element can host an isolated preview of any theme without
+   touching the rest of the page. Every scheme block therefore re-declares the
+   composed `--color-*` tokens so they are resolved against the element's own
+   raw variables.
+
+   Inline custom properties (`--brand-override`, `--accent-override`) set by
+   the ThemeProvider take priority over the palette rules above and are used
+   for user-supplied custom colours.
+   ========================================================================== */
+
 @layer base {
-  :root {
+  :root,
+  .theme-scope {
     --font-inter: "Inter", system-ui, sans-serif;
     --radius: 0.75rem;
     --sidebar-w: 15rem;
-    --color-primary: 142 50% 24%;
-    --color-primary-foreground: 42 33% 98%;
-    --color-primary-muted: 142 36% 92%;
-    --color-secondary: 38 88% 40%;
-    --color-secondary-foreground: 28 72% 14%;
-    --color-secondary-muted: 40 90% 92%;
-    --color-neutral: 28 10% 35%;
-    --color-neutral-foreground: 42 33% 98%;
-    --color-neutral-muted: 36 18% 92%;
-    --color-canvas: 42 33% 98%;
-    --color-surface: 0 0% 100%;
-    --color-border: 32 18% 84%;
-    --color-text: 148 20% 15%;
-    --color-muted-text: 28 8% 36%;
+
+    /* ── Font scale (overridden by [data-font-size]) ────────────────────── */
+    --font-scale: 1;
+
+    /* ── Focus ring width (overridden by [data-contrast]) ───────────────── */
+    --focus-ring-width: 2px;
+
+    /* ── Brand + accent hue/saturation (overridden by [data-accent]) ───── */
+    --brand-h: 142;
+    --brand-s: 50%;
+    --accent-h: 38;
+    --accent-s: 88%;
+
+    /* ── Light scheme lightness ────────────────────────────────────────── */
+    --brand-l: 24%;
+    --brand-fg-l: 98%;
+    --brand-muted-s: 36%;
+    --brand-muted-l: 92%;
+    --accent-l: 40%;
+    --accent-fg-l: 14%;
+    --accent-muted-s: 90%;
+    --accent-muted-l: 92%;
+
+    /* ── Light scheme neutrals ─────────────────────────────────────────── */
+    --neutral-l: 35%;
+    --neutral-fg-l: 98%;
+    --neutral-muted-s: 18%;
+    --neutral-muted-l: 92%;
+    --canvas-l: 98%;
+    --canvas-h: 42;
+    --canvas-s: 33%;
+    --surface-l: 100%;
+    --surface-h: 0;
+    --surface-s: 0%;
+    --border-l: 84%;
+    --border-h: 32;
+    --border-s: 18%;
+    --text-l: 15%;
+    --text-h: 148;
+    --text-s: 20%;
+    --muted-text-l: 36%;
+    --muted-text-h: 28;
+    --muted-text-s: 8%;
+
+    /* ── Composed semantic tokens ──────────────────────────────────────── */
+    /* `--brand-override` / `--accent-override` are injected as inline custom
+       properties by the ThemeProvider when the user picks a custom colour.
+       When absent the palette values are used. */
+    --color-primary: var(--brand-override, var(--brand-h) var(--brand-s) var(--brand-l));
+    --color-primary-foreground: var(--brand-fg-override, var(--brand-h) 42% var(--brand-fg-l));
+    --color-primary-muted: var(--brand-h) var(--brand-muted-s) var(--brand-muted-l);
+    --color-secondary: var(--accent-override, var(--accent-h) var(--accent-s) var(--accent-l));
+    --color-secondary-foreground: var(--accent-fg-override, var(--accent-h) 72% var(--accent-fg-l));
+    --color-secondary-muted: var(--accent-h) var(--accent-muted-s) var(--accent-muted-l);
+    --color-neutral: 28 10% var(--neutral-l);
+    --color-neutral-foreground: 42 33% var(--neutral-fg-l);
+    --color-neutral-muted: 36 var(--neutral-muted-s) var(--neutral-muted-l);
+    --color-canvas: var(--canvas-h) var(--canvas-s) var(--canvas-l);
+    --color-surface: var(--surface-h) var(--surface-s) var(--surface-l);
+    --color-border: var(--border-h) var(--border-s) var(--border-l);
+    --color-text: var(--text-h) var(--text-s) var(--text-l);
+    --color-muted-text: var(--muted-text-h) var(--muted-text-s) var(--muted-text-l);
+
+    /* ── Status colours (WCAG-tuned for both schemes) ──────────────────── */
+    --color-success: 142 72% 29%;
+    --color-success-foreground: 142 60% 96%;
+    --color-success-muted: 142 45% 92%;
+    --color-warning: 32 88% 34%;
+    --color-warning-foreground: 40 90% 96%;
+    --color-warning-muted: 40 90% 92%;
+    --color-danger: 0 72% 41%;
+    --color-danger-foreground: 0 0% 100%;
+    --color-danger-muted: 0 70% 95%;
+    --color-info: 205 82% 35%;
+    --color-info-foreground: 205 90% 97%;
+    --color-info-muted: 205 85% 93%;
   }
+
+  /* ── Dark scheme ─────────────────────────────────────────────────────── */
+  .dark {
+    --brand-l: 62%;
+    --brand-fg-l: 8%;
+    --brand-muted-s: 32%;
+    --brand-muted-l: 18%;
+    --accent-l: 58%;
+    --accent-fg-l: 8%;
+    --accent-muted-s: 32%;
+    --accent-muted-l: 18%;
+    --neutral-l: 40%;
+    --neutral-fg-l: 96%;
+    --neutral-muted-s: 28%;
+    --neutral-muted-l: 18%;
+    --canvas-l: 8%;
+    --canvas-h: 222;
+    --canvas-s: 47%;
+    --surface-l: 13%;
+    --surface-h: 217;
+    --surface-s: 33%;
+    --border-l: 22%;
+    --border-h: 217;
+    --border-s: 25%;
+    --text-l: 96%;
+    --text-h: 210;
+    --text-s: 30%;
+    --muted-text-l: 70%;
+    --muted-text-h: 215;
+    --muted-text-s: 16%;
+
+    --color-success: 142 62% 55%;
+    --color-success-foreground: 142 60% 10%;
+    --color-success-muted: 142 30% 18%;
+    --color-warning: 40 92% 60%;
+    --color-warning-foreground: 40 90% 10%;
+    --color-warning-muted: 40 40% 18%;
+    --color-danger: 0 84% 68%;
+    --color-danger-foreground: 0 0% 100%;
+    --color-danger-muted: 0 40% 20%;
+    --color-info: 205 90% 66%;
+    --color-info-foreground: 205 90% 10%;
+    --color-info-muted: 205 40% 20%;
+
+    /* Re-compose the semantic tokens so a `.dark` scope element resolves them
+       against its own raw variables (required for isolated theme previews). */
+    --color-primary: var(--brand-override-dark, var(--brand-h) var(--brand-s) var(--brand-l));
+    --color-primary-foreground: var(--brand-fg-override-dark, var(--brand-h) 42% var(--brand-fg-l));
+    --color-primary-muted: var(--brand-h) var(--brand-muted-s) var(--brand-muted-l);
+    --color-secondary: var(--accent-override-dark, var(--accent-h) var(--accent-s) var(--accent-l));
+    --color-secondary-foreground: var(--accent-fg-override-dark, var(--accent-h) 72% var(--accent-fg-l));
+    --color-secondary-muted: var(--accent-h) var(--accent-muted-s) var(--accent-muted-l);
+    --color-neutral: 28 10% var(--neutral-l);
+    --color-neutral-foreground: 42 33% var(--neutral-fg-l);
+    --color-neutral-muted: 36 var(--neutral-muted-s) var(--neutral-muted-l);
+    --color-canvas: var(--canvas-h) var(--canvas-s) var(--canvas-l);
+    --color-surface: var(--surface-h) var(--surface-s) var(--surface-l);
+    --color-border: var(--border-h) var(--border-s) var(--border-l);
+    --color-text: var(--text-h) var(--text-s) var(--text-l);
+    --color-muted-text: var(--muted-text-h) var(--muted-text-s) var(--muted-text-l);
+  }
+
+  /* ── High-contrast scheme (WCAG AAA oriented) ────────────────────────── */
+  .high-contrast {
+    --brand-l: 0%;
+    --brand-s: 0%;
+    --brand-fg-l: 100%;
+    --brand-muted-s: 0%;
+    --brand-muted-l: 100%;
+    --accent-l: 0%;
+    --accent-s: 0%;
+    --accent-fg-l: 100%;
+    --accent-muted-s: 0%;
+    --accent-muted-l: 100%;
+    --neutral-l: 0%;
+    --neutral-fg-l: 100%;
+    --neutral-muted-s: 0%;
+    --neutral-muted-l: 100%;
+    --canvas-l: 0%;
+    --canvas-h: 0;
+    --canvas-s: 0%;
+    --surface-l: 0%;
+    --surface-h: 0;
+    --surface-s: 0%;
+    --border-l: 100%;
+    --border-h: 0;
+    --border-s: 0%;
+    --text-l: 100%;
+    --text-h: 0;
+    --text-s: 0%;
+    --muted-text-l: 100%;
+    --muted-text-h: 0;
+    --muted-text-s: 0%;
+
+    --color-success: 120 100% 30%;
+    --color-success-foreground: 120 100% 100%;
+    --color-success-muted: 120 100% 15%;
+    --color-warning: 50 100% 45%;
+    --color-warning-foreground: 50 100% 10%;
+    --color-warning-muted: 50 100% 20%;
+    --color-danger: 0 100% 55%;
+    --color-danger-foreground: 0 100% 100%;
+    --color-danger-muted: 0 100% 25%;
+    --color-info: 210 100% 60%;
+    --color-info-foreground: 210 100% 100%;
+    --color-info-muted: 210 100% 25%;
+
+    /* Re-compose the semantic tokens (see `.dark` block above). */
+    --color-primary: 0 0% 0%;
+    --color-primary-foreground: 0 0% 100%;
+    --color-primary-muted: 0 0% 0%;
+    --color-secondary: 0 0% 100%;
+    --color-secondary-foreground: 0 0% 0%;
+    --color-secondary-muted: 0 0% 0%;
+    --color-neutral: 28 10% var(--neutral-l);
+    --color-neutral-foreground: 42 33% var(--neutral-fg-l);
+    --color-neutral-muted: 36 var(--neutral-muted-s) var(--neutral-muted-l);
+    --color-canvas: var(--canvas-h) var(--canvas-s) var(--canvas-l);
+    --color-surface: var(--surface-h) var(--surface-s) var(--surface-l);
+    --color-border: var(--border-h) var(--border-s) var(--border-l);
+    --color-text: var(--text-h) var(--text-s) var(--text-l);
+    --color-muted-text: var(--muted-text-h) var(--muted-text-s) var(--muted-text-l);
+  }
+
+  /* ── Contrast tuning — light scheme ──────────────────────────────────── */
+  [data-contrast="high"] {
+    --text-l: 6%;
+    --muted-text-l: 24%;
+    --border-l: 58%;
+    --focus-ring-width: 3px;
+  }
+  [data-contrast="extra-high"] {
+    --text-l: 0%;
+    --muted-text-l: 14%;
+    --border-l: 38%;
+    --focus-ring-width: 4px;
+  }
+  .dark[data-contrast="high"] {
+    --text-l: 99%;
+    --muted-text-l: 84%;
+    --border-l: 45%;
+    --focus-ring-width: 3px;
+  }
+  .dark[data-contrast="extra-high"] {
+    --text-l: 100%;
+    --muted-text-l: 92%;
+    --border-l: 62%;
+    --focus-ring-width: 4px;
+  }
+
+  /* ── Brand / accent palettes ([data-accent]) ─────────────────────────── */
+  [data-accent="emerald"] { --brand-h: 142; --brand-s: 50%; --accent-h: 38; --accent-s: 88%; }
+  [data-accent="teal"] { --brand-h: 173; --brand-s: 72%; --accent-h: 190; --accent-s: 85%; }
+  [data-accent="blue"] { --brand-h: 217; --brand-s: 72%; --accent-h: 199; --accent-s: 89%; }
+  [data-accent="indigo"] { --brand-h: 239; --brand-s: 62%; --accent-h: 258; --accent-s: 80%; }
+  [data-accent="violet"] { --brand-h: 271; --brand-s: 58%; --accent-h: 292; --accent-s: 70%; }
+  [data-accent="amber"] { --brand-h: 32; --brand-s: 88%; --accent-h: 12; --accent-s: 78%; }
+  [data-accent="rose"] { --brand-h: 347; --brand-s: 72%; --accent-h: 330; --accent-s: 80%; }
+  [data-accent="slate"] { --brand-h: 215; --brand-s: 25%; --accent-h: 199; --accent-s: 72%; }
+
+  /* ── Font scale ([data-font-size]) ───────────────────────────────────── */
+  [data-font-size="small"] { --font-scale: 0.9375; }
+  [data-font-size="medium"] { --font-scale: 1; }
+  [data-font-size="large"] { --font-scale: 1.0625; }
+  [data-font-size="extra-large"] { --font-scale: 1.125; }
 
   html {
     scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
     color-scheme: light;
+    font-size: calc(100% * var(--font-scale, 1));
   }
-  html.dark {
+  /* A `.theme-scope` element hosts an isolated preview of any theme. It
+     re-applies the font scale relative to its parent and resets the scheme
+     to light unless it also carries `.dark` / `.high-contrast`. */
+  .theme-scope {
+    font-size: calc(1em * var(--font-scale, 1));
+    color-scheme: light;
+    background-color: hsl(var(--color-canvas));
+    color: hsl(var(--color-text));
+  }
+  .dark {
+    color-scheme: dark;
+  }
+  .high-contrast {
     color-scheme: dark;
   }
 
@@ -44,8 +312,11 @@
       color 300ms ease,
       border-color 300ms ease;
   }
-  html.dark body {
+  .dark body {
     @apply bg-slate-950 text-slate-100;
+  }
+  .high-contrast body {
+    @apply bg-black text-white;
   }
 
   * {
@@ -55,7 +326,7 @@
   ::selection {
     @apply bg-brand-100 text-brand-900;
   }
-  html.dark ::selection {
+  .dark ::selection {
     @apply bg-brand-900 text-brand-50;
   }
 
@@ -73,10 +344,10 @@
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-slate-300;
   }
-  html.dark ::-webkit-scrollbar-thumb {
+  .dark ::-webkit-scrollbar-thumb {
     @apply bg-slate-700;
   }
-  html.dark ::-webkit-scrollbar-thumb:hover {
+  .dark ::-webkit-scrollbar-thumb:hover {
     @apply bg-slate-600;
   }
 }
@@ -205,7 +476,7 @@
 
   /* ── Typography ───────────────────────────────────────────────────────── */
   .page-title {
-    @apply text-2xl font-bold text-slate-900 tracking-tight;
+    @apply text-2xl font-bold text-foreground tracking-tight;
   }
   .section-title {
     @apply text-lg font-semibold text-foreground;
@@ -305,50 +576,146 @@
            shadow-sm;
   }
 
-  html.dark .card,
-  html.dark .modal-panel,
-  html.dark .glass,
-  html.dark .table-wrapper {
-    @apply bg-slate-900 border-slate-800;
+  /* ── Dark scheme component overrides (#1170) ─────────────────────────── */
+  /* These now resolve through the semantic tokens so that accent, contrast
+     and custom-brand overrides are honoured automatically. */
+  .dark .card,
+  .dark .modal-panel,
+  .dark .glass,
+  .dark .table-wrapper {
+    @apply bg-surface border-border;
   }
-  html.dark .btn-secondary {
-    @apply bg-slate-900 text-slate-100 border-slate-700 hover:bg-slate-800 hover:border-slate-600;
+  .dark .btn-secondary {
+    @apply bg-surface text-foreground border-border hover:bg-neutral-muted hover:border-border;
   }
-  html.dark .btn-ghost {
-    @apply text-slate-300 hover:bg-slate-800 hover:text-white;
+  .dark .btn-ghost {
+    @apply text-muted-foreground hover:bg-neutral-muted hover:text-foreground;
   }
-  html.dark .input,
-  html.dark .select,
-  html.dark .textarea {
-    @apply bg-slate-900 text-slate-100 border-slate-700 placeholder:text-slate-500;
+  .dark .input,
+  .dark .select,
+  .dark .textarea {
+    @apply bg-surface text-foreground border-border placeholder:text-muted-foreground;
   }
-  html.dark .label {
-    @apply text-slate-200;
+  .dark .label {
+    @apply text-foreground;
   }
-  html.dark .modal-header,
-  html.dark .modal-footer,
-  html.dark .table-head {
-    @apply border-slate-800;
+  .dark .modal-header,
+  .dark .modal-footer,
+  .dark .table-head {
+    @apply border-border;
   }
-  html.dark .modal-header,
-  html.dark .modal-body,
-  html.dark .modal-footer {
-    @apply bg-slate-900;
+  .dark .modal-header,
+  .dark .modal-body,
+  .dark .modal-footer {
+    @apply bg-surface;
   }
-  html.dark .table-head {
-    @apply bg-slate-900;
+  .dark .table-head {
+    @apply bg-surface;
   }
-  html.dark .table-th {
-    @apply text-slate-400;
+  .dark .table-th {
+    @apply text-muted-foreground;
   }
-  html.dark .table-td {
-    @apply text-slate-200;
+  .dark .table-td {
+    @apply text-foreground;
   }
-  html.dark .table-row {
-    @apply border-slate-800 hover:bg-slate-900/60;
+  .dark .table-row {
+    @apply border-border hover:bg-neutral-muted/60;
   }
-  html.dark .nav-link {
-    @apply text-slate-300 hover:bg-slate-800 hover:text-white;
+  .dark .nav-link {
+    @apply text-muted-foreground hover:bg-neutral-muted hover:text-foreground;
+  }
+  .dark .page-title {
+    @apply text-foreground;
+  }
+  .dark .progress-track {
+    @apply bg-neutral-muted;
+  }
+  .dark .badge-gray {
+    @apply bg-slate-800 text-slate-200 ring-1 ring-slate-600/60;
+  }
+  .dark .badge-green {
+    @apply bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-400/30;
+  }
+  .dark .badge-blue {
+    @apply bg-blue-500/15 text-blue-300 ring-1 ring-blue-400/30;
+  }
+  .dark .badge-yellow {
+    @apply bg-amber-500/15 text-amber-300 ring-1 ring-amber-400/30;
+  }
+  .dark .badge-red {
+    @apply bg-red-500/15 text-red-300 ring-1 ring-red-400/30;
+  }
+  .dark .badge-purple {
+    @apply bg-violet-500/15 text-violet-300 ring-1 ring-violet-400/30;
+  }
+  .dark .badge-orange {
+    @apply bg-orange-500/15 text-orange-300 ring-1 ring-orange-400/30;
+  }
+  .dark .alert-error {
+    @apply bg-red-500/10 border-red-400/30 text-red-200;
+  }
+  .dark .alert-success {
+    @apply bg-emerald-500/10 border-emerald-400/30 text-emerald-200;
+  }
+  .dark .alert-info {
+    @apply bg-blue-500/10 border-blue-400/30 text-blue-200;
+  }
+  .dark .alert-warning {
+    @apply bg-amber-500/10 border-amber-400/30 text-amber-200;
+  }
+  .dark ::selection {
+    @apply bg-brand-900 text-brand-50;
+  }
+  .dark .glass {
+    background: rgba(15, 23, 42, 0.8);
+    border-color: rgba(148, 163, 184, 0.25);
+  }
+
+  /* ── High-contrast scheme component overrides (#1170) ─────────────────── */
+  .high-contrast .card,
+  .high-contrast .modal-panel,
+  .high-contrast .table-wrapper {
+    @apply bg-black border-white;
+  }
+  .high-contrast .btn-secondary,
+  .high-contrast .input,
+  .high-contrast .select,
+  .high-contrast .textarea {
+    @apply bg-black text-white border-white;
+  }
+  .high-contrast .btn-ghost {
+    @apply text-white hover:bg-white hover:text-black;
+  }
+  .high-contrast .page-title,
+  .high-contrast .section-title,
+  .high-contrast .table-td,
+  .high-contrast .label {
+    @apply text-white;
+  }
+  .high-contrast .muted,
+  .high-contrast .table-th {
+    @apply text-white;
+  }
+  .high-contrast .modal-header,
+  .high-contrast .modal-body,
+  .high-contrast .modal-footer,
+  .high-contrast .table-head {
+    @apply bg-black border-white;
+  }
+  .high-contrast .table-row {
+    @apply border-white;
+  }
+  .high-contrast .nav-link {
+    @apply text-white hover:bg-white hover:text-black;
+  }
+  .high-contrast .badge-gray {
+    @apply bg-white text-black ring-1 ring-white;
+  }
+  .high-contrast .btn-primary {
+    @apply bg-white text-black;
+  }
+  .high-contrast .btn-outline-primary {
+    @apply border-white text-white hover:bg-white hover:text-black;
   }
 }
 
@@ -380,7 +747,6 @@
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.6);
 }
-
 /* ── Noise texture overlay ──────────────────────────────────────────────────── */
 .noise::after {
   content: "";
@@ -397,16 +763,18 @@
   --chart-axis: #94a3b8;
   --chart-line: #16a34a;
 }
-html.dark .portfolio-chart {
+  .dark .portfolio-chart {
   --chart-grid: #1e293b;
   --chart-axis: #64748b;
   --chart-line: #4ade80;
 }
-.portfolio-chart-tooltip {
-  @apply rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 shadow-card-md;
+  .high-contrast .portfolio-chart {
+  --chart-grid: #ffffff;
+  --chart-axis: #ffffff;
+  --chart-line: #000000;
 }
-html.dark .portfolio-chart-tooltip {
-  @apply border-slate-700 bg-slate-900;
+.portfolio-chart-tooltip {
+  @apply rounded-xl border border-border bg-surface px-3.5 py-2.5 shadow-card-md;
 }
 
 /* ── Leaflet map — Issue #247 ─────────────────────────────────────────────── */
@@ -432,4 +800,179 @@ html.dark .portfolio-chart-tooltip {
   position: absolute;
   left: 0;
   top: 0;
+}
+
+/* ── Dashboard tour accessibility (#1020) ─────────────────────────────────── */
+.agri-fi-tour.shepherd-element {
+  z-index: 10000;
+  max-width: 360px;
+  border: 2px solid #047857;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+  background: #ffffff;
+  color: #0f172a;
+}
+
+.agri-fi-tour .shepherd-header {
+  background: #ecfdf5;
+  border-bottom: 1px solid #a7f3d0;
+  padding: 0.75rem 1rem;
+}
+
+.agri-fi-tour .shepherd-title {
+  color: #064e3b;
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.agri-fi-tour .shepherd-text {
+  color: #1e293b;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.agri-fi-tour .shepherd-button {
+  border-radius: 8px;
+  font-weight: 600;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.5rem 1rem;
+}
+
+.agri-fi-tour .shepherd-button:focus-visible {
+  outline: 3px solid #047857;
+  outline-offset: 2px;
+}
+
+.agri-fi-tour .shepherd-button-primary {
+  background: #047857;
+  color: #ffffff;
+}
+
+.agri-fi-tour .shepherd-button-primary:hover {
+  background: #065f46;
+}
+
+.agri-fi-tour .shepherd-button-secondary {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.agri-fi-tour .shepherd-cancel-icon {
+  color: #334155;
+}
+
+.agri-fi-tour .shepherd-cancel-icon:focus-visible {
+  outline: 3px solid #047857;
+  outline-offset: 2px;
+}
+
+/* WCAG AA highlight: high-contrast emerald ring on target */
+.agri-fi-tour-highlight,
+.shepherd-highlight.agri-fi-tour-highlight {
+  outline: 3px solid #047857 !important;
+  outline-offset: 4px;
+  box-shadow: 0 0 0 6px rgba(4, 120, 87, 0.35) !important;
+}
+
+.agri-fi-tour--reduced-motion,
+.agri-fi-tour--reduced-motion * {
+  transition: none !important;
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shepherd-modal-overlay-container,
+  .shepherd-element {
+    transition: none !important;
+  }
+}
+
+/* ============================================================================
+   Theme-specific component overrides — issue #1170
+   ----------------------------------------------------------------------------
+   These rules live *outside* @layer so they take priority over Tailwind
+   utilities (CSS cascade layers give unlayered rules the highest precedence).
+   That is what allows a theme variant to restyle a component without having
+   to touch the component source.
+   ========================================================================== */
+
+/* Focus rings follow the user's contrast preference. */
+  [data-contrast="high"] .focus-ring {
+  --tw-ring-width: 3px;
+}
+  [data-contrast="extra-high"] .focus-ring {
+  --tw-ring-width: 4px;
+}
+  [data-contrast="high"] .btn:focus-visible,
+  [data-contrast="extra-high"] .btn:focus-visible {
+  --tw-ring-width: var(--focus-ring-width);
+}
+  [data-contrast="high"] .input:focus-visible,
+  [data-contrast="high"] .select:focus-visible,
+  [data-contrast="high"] .textarea:focus-visible,
+  [data-contrast="extra-high"] .input:focus-visible,
+  [data-contrast="extra-high"] .select:focus-visible,
+  [data-contrast="extra-high"] .textarea:focus-visible {
+  --tw-ring-width: var(--focus-ring-width);
+}
+
+/* High-contrast theme flattens decorative shadows that reduce edge clarity. */
+  .high-contrast .card,
+  .high-contrast .modal-panel,
+  .high-contrast .stat-card,
+  .high-contrast .table-wrapper {
+  box-shadow: none !important;
+}
+  .high-contrast .btn {
+  box-shadow: none !important;
+}
+
+/* Extra-high contrast darkens/lightens borders to sharpen separation. */
+  [data-contrast="extra-high"] .card,
+  [data-contrast="extra-high"] .table-wrapper {
+  border-width: 2px;
+}
+  [data-contrast="extra-high"] .input,
+  [data-contrast="extra-high"] .select,
+  [data-contrast="extra-high"] .textarea {
+  border-width: 2px;
+}
+
+/* Reduced-transparency support: the glass effect falls back to a solid fill. */
+@media (prefers-reduced-transparency: reduce) {
+  .glass {
+    background: hsl(var(--color-surface));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* Windows High Contrast / forced-colors mode: let the OS palette win. */
+@media (forced-colors: active) {
+  .card,
+  .modal-panel,
+  .table-wrapper,
+  .btn,
+  .input,
+  .select,
+  .textarea {
+    border: 1px solid CanvasText;
+  }
+  .btn-primary {
+    background: ButtonFace;
+    color: ButtonText;
+  }
+}
+
+/* Users who prefer more contrast at the OS level get a boosted border. */
+@media (prefers-contrast: more) {
+  :root:not([data-contrast]) {
+    --border-l: 62%;
+    --focus-ring-width: 3px;
+  }
+  .dark:not([data-contrast]) {
+    --border-l: 48%;
+    --focus-ring-width: 3px;
+  }
 }

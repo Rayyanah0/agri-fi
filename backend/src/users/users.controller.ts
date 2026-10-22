@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Delete,
+  Patch,
+  Body,
   UseGuards,
   Request,
   Query,
@@ -23,6 +25,7 @@ import {
 } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { UsersService } from './users.service';
+import { UpdateUserPreferencesDto } from './dto/update-user-preferences.dto';
 import { TradeDealsService } from '../trade-deals/trade-deals.service';
 import { User } from '../auth/entities/user.entity';
 
@@ -53,6 +56,25 @@ export class UsersController {
   @ApiResponse({ status: 404, description: 'User not found' })
   async getCurrentUser(@Request() req: AuthRequest) {
     return this.usersService.getProfile(req.user.id);
+  }
+
+  @Patch('me')
+  @ApiOperation({
+    summary:
+      "Update the authenticated user's preferences (appearance / theme sync) (#1170)",
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Updated user profile',
+  })
+  @ApiResponse({ status: 400, description: 'Invalid preference payload' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async updateMyPreferences(
+    @Request() req: AuthRequest,
+    @Body() dto: UpdateUserPreferencesDto,
+  ) {
+    return this.usersService.updatePreferences(req.user.id, dto);
   }
 
   @Get('me/credit-score')

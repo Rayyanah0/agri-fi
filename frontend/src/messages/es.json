@@ -429,7 +429,8 @@
     "creditTier": {
       "excellent": "Excelente",
       "good": "Bueno",
-      "fair": "Regular"
+      "fair": "Regular",
+      "poor": "Necesita mejora"
     },
     "activeDeals": {
       "heading": "Tratos Activos",
@@ -462,5 +463,66 @@
     "currency": "{value, number, currency}",
     "date": "{value, date, short}",
     "number": "{value, number}"
+  }
+,
+  "theme": {
+    "title": "Apariencia",
+    "description": "Personaliza el esquema de color, los colores de marca, el tamaño del texto y el contraste.",
+    "preview": {
+      "title": "Vista previa",
+      "label": "Vista previa del tema seleccionado",
+      "hint": "Los cambios se aplican primero a la vista previa. Usa Aplicar para conservarlos."
+    },
+    "scheme": {
+      "label": "Esquema de color",
+      "light": "Claro",
+      "dark": "Oscuro",
+      "high-contrast": "Alto contraste",
+      "system": "Sistema",
+      "systemLight": "Siguiendo tu dispositivo: apariencia clara.",
+      "systemDark": "Siguiendo tu dispositivo: apariencia oscura."
+    },
+    "accent": {
+      "label": "Colores de marca",
+      "emerald": "Esmeralda",
+      "teal": "Verde azulado",
+      "blue": "Azul",
+      "indigo": "Índigo",
+      "violet": "Violeta",
+      "amber": "Ámbar",
+      "rose": "Rosa",
+      "slate": "Pizarra",
+      "customBrand": "Color de marca personalizado",
+      "customAccent": "Color de acento personalizado",
+      "apply": "Aplicar",
+      "hint": "Introduce un triplete HSL, por ejemplo 142 50% 24%."
+    },
+    "fontSize": {
+      "label": "Tamaño del texto",
+      "small": "Pequeño",
+      "medium": "Mediano",
+      "large": "Grande",
+      "extra-large": "Muy grande"
+    },
+    "contrast": {
+      "label": "Contraste",
+      "normal": "Normal",
+      "high": "Alto",
+      "extra-high": "Muy alto",
+      "hint": "Un contraste más alto mejora la legibilidad para personas con baja visión."
+    },
+    "actions": {
+      "reset": "Restablecer valores predeterminados",
+      "sync": "Sincronizar entre dispositivos",
+      "cancelPreview": "Cancelar vista previa",
+      "applyPreview": "Aplicar vista previa"
+    },
+    "sync": {
+      "idle": "Sin sincronizar",
+      "syncing": "Sincronizando…",
+      "synced": "Sincronizado entre dispositivos",
+      "error": "Error de sincronización",
+      "offline": "Sin conexión: no se puede sincronizar"
+    }
   }
 }

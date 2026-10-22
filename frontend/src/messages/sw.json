@@ -438,7 +438,8 @@
     "creditTier": {
       "excellent": "Bora sana",
       "good": "Nzuri",
-      "fair": "Ya kutosha"
+      "fair": "Ya kutosha",
+      "poor": "Inahitaji kuboreshwa"
     },
     "activeDeals": {
       "heading": "Mikataba Inayoendelea",
@@ -504,5 +505,66 @@
       "finish": "Anza"
     },
     "restart": "Anza Upya Ziara"
+  }
+,
+  "theme": {
+    "title": "Mwonekano",
+    "description": "Badilisha mpangilio wa rangi, rangi za brandi, ukubwa wa maandishi na mgongororo.",
+    "preview": {
+      "title": "Onyesho",
+      "label": "Onyesho la mandhari iliyochaguliwa",
+      "hint": "Mabadiliko hutumia kwa onyesho kwanza. Tumia Tumia kuweka."
+    },
+    "scheme": {
+      "label": "Mpangilio wa rangi",
+      "light": "Nuru",
+      "dark": "Giza",
+      "high-contrast": "Mgongororo mkubwa",
+      "system": "Mfumo",
+      "systemLight": "Inafuata kifaa chako: mwonekano wa nuru.",
+      "systemDark": "Inafuata kifaa chako: mwonekano wa giza."
+    },
+    "accent": {
+      "label": "Rangi za brandi",
+      "emerald": "Marumaru",
+      "teal": "Bluu ya kijani",
+      "blue": "Bluu",
+      "indigo": "Indigo",
+      "violet": "Violeti",
+      "amber": "Manjano",
+      "rose": "Waridi",
+      "slate": "Slate",
+      "customBrand": "Rangi ya brandi maalum",
+      "customAccent": "Rangi ya msisitizo maalum",
+      "apply": "Tumia",
+      "hint": "Weka tripleti ya HSL, mfano 142 50% 24%."
+    },
+    "fontSize": {
+      "label": "Ukubwa wa maandishi",
+      "small": "Ndogo",
+      "medium": "Wastani",
+      "large": "Kubwa",
+      "extra-large": "Kubwa sana"
+    },
+    "contrast": {
+      "label": "Mgongororo",
+      "normal": "Kawaida",
+      "high": "Mkubwa",
+      "extra-high": "Mkubwa sana",
+      "hint": "Mgongororo mkubwa huboresha kusomeka kwa watu wenye macho dhaifu."
+    },
+    "actions": {
+      "reset": "Rudisha chaguo-msingi",
+      "sync": "Sawazisha kwa vifaa",
+      "cancelPreview": "Ghairi onyesho",
+      "applyPreview": "Tumia onyesho"
+    },
+    "sync": {
+      "idle": "Haijasawazishwa",
+      "syncing": "Inasawazisha…",
+      "synced": "Imesawazishwa kwa vifaa",
+      "error": "Kushindwa kwa kusawazisha",
+      "offline": "Haiwezekani kusawazisha bila mtandao"
+    }
   }
 }

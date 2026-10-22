@@ -28,9 +28,13 @@ describe('WsJwtGuard', () => {
     guard = new WsJwtGuard(jwtService);
   });
 
-  it('rejects when no token is provided', () => {
+  it('allows anonymous connections when no token is provided', () => {
     const ctx = makeContext({ auth: {}, headers: {} });
-    expect(() => guard.canActivate(ctx)).toThrow(/Unauthorized/);
+    expect(guard.canActivate(ctx)).toBe(true);
+    const client = ctx.switchToWs().getClient() as any;
+    expect(client.data.isAnonymous).toBe(true);
+    expect(client.data.user).toBeUndefined();
+    expect(client.disconnect).not.toHaveBeenCalled();
   });
 
   it('rejects an invalid token', () => {
@@ -44,6 +48,7 @@ describe('WsJwtGuard', () => {
     expect(guard.canActivate(ctx)).toBe(true);
     const client = ctx.switchToWs().getClient() as any;
     expect(client.data.user.sub).toBe('user-1');
+    expect(client.data.isAnonymous).toBe(false);
   });
 
   it('rejects an expired token and emits auth_error', () => {
@@ -64,5 +69,8 @@ describe('WsJwtGuard', () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(guard.canActivate(ctx)).toBe(true);
+    const client = ctx.switchToWs().getClient() as any;
+    expect(client.data.user.sub).toBe('user-2');
+    expect(client.data.isAnonymous).toBe(false);
   });
 });

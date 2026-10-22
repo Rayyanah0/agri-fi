@@ -14,8 +14,8 @@
           "originalSource": "/"
         },
         {
-          "regexp": "^(?:\\/(_next\\/data\\/[^/]{1,}))?(?:\\/(en|fr|pt|sw))(?:\\/((?:[^\\/#\\?]+?)(?:\\/(?:[^\\/#\\?]+?))*))?(.json)?[\\/#\\?]?$",
-          "originalSource": "/(en|fr|pt|sw)/:path*"
+          "regexp": "^(?:\\/(_next\\/data\\/[^/]{1,}))?(?:\\/(en|es|fr|pt|sw))(?:\\/((?:[^\\/#\\?]+?)(?:\\/(?:[^\\/#\\?]+?))*))?(.json)?[\\/#\\?]?$",
+          "originalSource": "/(en|es|fr|pt|sw)/:path*"
         },
         {
           "regexp": "^(?:\\/(_next\\/data\\/[^/]{1,}))?(?:\\/((?!api|_next|_static|_vercel|[\\w-]+\\.\\w+).*))(.json)?[\\/#\\?]?$",
@@ -25,11 +25,11 @@
       "wasm": [],
       "assets": [],
       "env": {
-        "__NEXT_BUILD_ID": "6s0Jm1VCxi19Kxzd1egh5",
-        "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY": "JXR9H6WtLIsjUEAM0p/tastVeJUZdy4sgfdl+hGj474=",
-        "__NEXT_PREVIEW_MODE_ID": "872d0477d0b8f10fa356ea2a975fb5d7",
-        "__NEXT_PREVIEW_MODE_ENCRYPTION_KEY": "e69014f43027157b2ebba9ca72ed092e93591a95217e935bf1fe64628fbe376e",
-        "__NEXT_PREVIEW_MODE_SIGNING_KEY": "67c304fad8b92c1a76c4f10f4184d113be1a5a1c844b3e85e04d45802d2da570"
+        "__NEXT_BUILD_ID": "7_81tquCz9I1GBLb6Q2ew",
+        "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY": "+oJnXrNg3V9qqCtSiQ//c42F0V0XMtqtKAX4YRztb20=",
+        "__NEXT_PREVIEW_MODE_ID": "51954a293853955b7079e2a786dc2755",
+        "__NEXT_PREVIEW_MODE_ENCRYPTION_KEY": "38fe51ef6939a6dda50edc07276b83733a608561cb9fc7db1490bf76f8ff3c47",
+        "__NEXT_PREVIEW_MODE_SIGNING_KEY": "3ca6be249127325a6b1c906c46d18b8b799e6d396444a07f24b391ca78112653"
       }
     }
   },
@@ -68,11 +68,11 @@
         }
       ],
       "env": {
-        "__NEXT_BUILD_ID": "6s0Jm1VCxi19Kxzd1egh5",
-        "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY": "JXR9H6WtLIsjUEAM0p/tastVeJUZdy4sgfdl+hGj474=",
-        "__NEXT_PREVIEW_MODE_ID": "872d0477d0b8f10fa356ea2a975fb5d7",
-        "__NEXT_PREVIEW_MODE_ENCRYPTION_KEY": "e69014f43027157b2ebba9ca72ed092e93591a95217e935bf1fe64628fbe376e",
-        "__NEXT_PREVIEW_MODE_SIGNING_KEY": "67c304fad8b92c1a76c4f10f4184d113be1a5a1c844b3e85e04d45802d2da570"
+        "__NEXT_BUILD_ID": "7_81tquCz9I1GBLb6Q2ew",
+        "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY": "+oJnXrNg3V9qqCtSiQ//c42F0V0XMtqtKAX4YRztb20=",
+        "__NEXT_PREVIEW_MODE_ID": "51954a293853955b7079e2a786dc2755",
+        "__NEXT_PREVIEW_MODE_ENCRYPTION_KEY": "38fe51ef6939a6dda50edc07276b83733a608561cb9fc7db1490bf76f8ff3c47",
+        "__NEXT_PREVIEW_MODE_SIGNING_KEY": "3ca6be249127325a6b1c906c46d18b8b799e6d396444a07f24b391ca78112653"
       }
     }
   },

@@ -17,6 +17,7 @@ import { IdempotencyService } from './idempotency.service';
     StellarModule,
     SorobanModule,
     NotificationsModule,
+    QueueModule,
   ],
   providers: [QueueProcessor, IdempotencyService],
 })

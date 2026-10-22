@@ -5,6 +5,7 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
 import { QueueService } from './queue.service';
 import { QueueTopologyService } from './queue-topology.service';
 import { IdempotencyService } from './idempotency.service';
+import { QueueAnalyticsService } from './queue-analytics.service';
 import { QUEUE_SERVICE } from './queue.constants';
 import {
   MAIN_QUEUE_NAME,
@@ -34,6 +35,10 @@ export { QUEUE_SERVICE } from './queue.constants';
             ],
             queue: MAIN_QUEUE_NAME,
             queueOptions: dlxQueueOptions(MAIN_QUEUE_DLX),
+            // Persist messages to disk so they survive broker restarts (#1240).
+            persistent: true,
+            // Consumers ack/nack explicitly (see queue.processor.ts).
+            noAck: false,
             prefetchCount: config.get<number>('RABBITMQ_PREFETCH_COUNT', 10),
           },
         }),
@@ -46,6 +51,7 @@ export { QUEUE_SERVICE } from './queue.constants';
     QueueAlertService,
     QueueTopologyService,
     IdempotencyService,
+    QueueAnalyticsService,
   ],
   exports: [
     QueueService,
@@ -53,6 +59,7 @@ export { QUEUE_SERVICE } from './queue.constants';
     QueueAlertService,
     OutboxModule,
     IdempotencyService,
+    QueueAnalyticsService,
   ],
 })
 export class QueueModule {}

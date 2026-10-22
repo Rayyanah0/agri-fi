@@ -19,7 +19,14 @@ const domainMapping = {
   deals: ['trade-deals', 'shipments', 'upgrade'],
   investments: ['investments', 'escrow', 'outbox'],
   payments: ['stellar'],
-  compliance: ['compliance', 'audit', 'archival', 'database', 'webhooks'],
+  compliance: [
+    'compliance',
+    'audit',
+    'archival',
+    'database',
+    'webhooks',
+    'self-healing',
+  ],
 };
 
 function getDomain(filePath) {

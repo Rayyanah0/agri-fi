@@ -11,6 +11,7 @@ import { SkipThrottle } from '@nestjs/throttler';
 import { RabbitmqHealthIndicator } from './rabbitmq.health-indicator';
 import { StellarHealthIndicator } from './stellar.health-indicator';
 import { RedisHealthIndicator } from './redis.health-indicator';
+import { DocumentScanHealthIndicator } from './document-scan.health-indicator';
 import { MetricsIpGuard } from '../metrics/metrics-ip.guard';
 
 @ApiTags('health')
@@ -23,6 +24,7 @@ export class HealthController {
     private rabbitmq: RabbitmqHealthIndicator,
     private stellar: StellarHealthIndicator,
     private redis: RedisHealthIndicator,
+    private documentScan: DocumentScanHealthIndicator,
     private memory: MemoryHealthIndicator,
     private disk: DiskHealthIndicator,
   ) {}
@@ -130,8 +132,11 @@ export class HealthController {
     summary: 'Detailed health check for all dependencies',
     description:
       'Returns per-dependency status for Postgres, RabbitMQ, Redis, Stellar Horizon, ' +
-      'and system resources. Requires authentication via IP allowlist (same as /metrics). ' +
-      'Does not expose internal topology details to the public.',
+      'the ClamAV document scanner (documents.scan_available) and system resources. ' +
+      'A scanner outage is reported as degraded mode: document uploads fail closed, ' +
+      'while liveness/readiness (/health) keeps the backend up. Requires authentication ' +
+      'via IP allowlist (same as /metrics). Does not expose internal topology details ' +
+      'to the public.',
   })
   @ApiResponse({
     status: 200,
@@ -147,6 +152,7 @@ export class HealthController {
       () => this.rabbitmq.isHealthy('rabbitmq'),
       () => this.redis.isHealthy('redis'),
       () => this.stellar.isHealthy('stellar'),
+      () => this.documentScan.isHealthy('documents'),
       () => this.memory.checkHeap('memory_heap', 150 * 1024 * 1024),
       () => this.memory.checkRSS('memory_rss', 150 * 1024 * 1024),
       () =>

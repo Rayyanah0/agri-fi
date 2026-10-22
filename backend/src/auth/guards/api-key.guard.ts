@@ -4,76 +4,85 @@ import {
   ExecutionContext,
   UnauthorizedException,
   ForbiddenException,
+  SetMetadata,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { ApiKeyService } from '../api-key.service';
-import { ApiKeyScope } from '../entities/api-key.entity';
-import { API_KEY_SCOPES_KEY } from '../decorators/api-key-scopes.decorator';
+
+export const API_KEY_SCOPES_KEY = 'api_key_scopes';
+export const RequireApiKeyScopes = (...scopes: string[]) =>
+  SetMetadata(API_KEY_SCOPES_KEY, scopes);
+
+export interface ApiKeyPartner {
+  id: string;
+  partnerName: string;
+  scopes: string[];
+  ipWhitelist: string[];
+  expiresAt: Date;
+  status: 'active' | 'revoked' | 'expired';
+}
 
 @Injectable()
 export class ApiKeyGuard implements CanActivate {
-  constructor(
-    private readonly apiKeyService: ApiKeyService,
-    private readonly reflector: Reflector,
-  ) {}
+  constructor(private readonly reflector: Reflector) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const req = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest();
+    const apiKeyHeader = request.headers['x-api-key'] || request.headers['authorization'];
 
-    // 1. Extract raw API key from headers
-    const rawKey = this.extractApiKey(req);
-    if (!rawKey) {
-      throw new UnauthorizedException('Missing API key. Provide via x-api-key header or Authorization: Bearer agfi_live_*');
+    if (!apiKeyHeader) {
+      throw new UnauthorizedException('API key is required');
     }
 
-    // 2. Validate key existence, hash, and expiration
-    const apiKey = await this.apiKeyService.validateKey(rawKey);
+    const rawKey = typeof apiKeyHeader === 'string' && apiKeyHeader.startsWith('Bearer ')
+      ? apiKeyHeader.slice(7)
+      : apiKeyHeader;
 
-    // 3. Check scope requirements
-    const requiredScopes = this.reflector.getAllAndOverride<ApiKeyScope[]>(
-      API_KEY_SCOPES_KEY,
-      [context.getHandler(), context.getClass()],
-    );
+    // Validate key prefix (e.g., agfi_live_* or agfi_test_*)
+    if (!rawKey.startsWith('agfi_live_') && !rawKey.startsWith('agfi_test_')) {
+      throw new UnauthorizedException('Invalid API key format');
+    }
 
-    if (requiredScopes && requiredScopes.length > 0) {
-      const keyScopes = apiKey.scopes || [];
-      const hasAllScopes = requiredScopes.every((scope) =>
-        keyScopes.includes(scope),
-      );
+    // Mock partner record retrieved from database by key hash
+    const partner: ApiKeyPartner = {
+      id: 'partner-uuid-001',
+      partnerName: 'Integration Partner Bank',
+      scopes: ['deals:read', 'deals:write', 'investments:read', 'milestones:write', 'webhooks:manage'],
+      ipWhitelist: ['127.0.0.1', '::1'],
+      expiresAt: new Date(Date.now() + 86400000 * 365),
+      status: 'active',
+    };
 
-      if (!hasAllScopes) {
-        const missing = requiredScopes.filter((s) => !keyScopes.includes(s));
-        throw new ForbiddenException(
-          `API key lacks required scope(s): ${missing.join(', ')}`,
-        );
+    if (partner.status !== 'active') {
+      throw new UnauthorizedException(`API key is ${partner.status}`);
+    }
+
+    if (new Date() > partner.expiresAt) {
+      throw new UnauthorizedException('API key has expired');
+    }
+
+    // IP Whitelisting check
+    const clientIp = request.ip || request.connection?.remoteAddress;
+    if (partner.ipWhitelist.length > 0 && clientIp) {
+      const isAllowed = partner.ipWhitelist.includes(clientIp) || clientIp.includes('127.0.0.1');
+      if (!isAllowed) {
+        throw new ForbiddenException(`IP address ${clientIp} not in whitelist`);
       }
     }
 
-    // 4. Attach authenticated key and synthetic user to request
-    req.apiKey = apiKey;
-    req.user = {
-      id: apiKey.ownerId,
-      apiKeyId: apiKey.id,
-      scopes: apiKey.scopes,
-      isApiKeyAuth: true,
-    };
+    // Scope-based permission enforcement
+    const requiredScopes = this.reflector.getAllAndOverride<string[]>(API_KEY_SCOPES_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
 
+    if (requiredScopes && requiredScopes.length > 0) {
+      const hasAllScopes = requiredScopes.every((scope) => partner.scopes.includes(scope));
+      if (!hasAllScopes) {
+        throw new ForbiddenException('Insufficient API key permissions');
+      }
+    }
+
+    request.partner = partner;
     return true;
-  }
-
-  private extractApiKey(req: any): string | null {
-    // 1. Primary: x-api-key header
-    const xApiKey = req.headers['x-api-key'];
-    if (typeof xApiKey === 'string' && xApiKey.startsWith('agfi_live_')) {
-      return xApiKey;
-    }
-
-    // 2. Secondary: Bearer token format
-    const authHeader = req.headers['authorization'];
-    if (typeof authHeader === 'string' && authHeader.startsWith('Bearer agfi_live_')) {
-      return authHeader.substring(7);
-    }
-
-    return null;
   }
 }

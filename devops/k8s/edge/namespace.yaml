@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agri-fi-edge
+  labels:
+    app.kubernetes.io/part-of: agri-fi
+    app.kubernetes.io/component: edge-platform

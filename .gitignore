@@ -23,6 +23,8 @@ coverage
 test-results
 test-output.txt
 playwright-report
+visual-playwright-report
+visual-test-results
 .nyc_output
 
 # Logs
@@ -86,3 +88,16 @@ backend/test-output.txt
 *.local.ts
 fix.md
 *.md.bak
+
+# Build artifacts (framework-specific)
+frontend/.next/
+frontend/tsconfig.tsbuildinfo
+
+# Test output reports
+backend/test-output.txt
+frontend/src/messages/TRANSLATION_TEST_REPORT.md
+backend/test/CONCURRENCY_TEST_REPORT.md
+
+# Local env files (explicit paths for clarity)
+backend/.env
+frontend/.env.local

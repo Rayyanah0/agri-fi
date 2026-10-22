@@ -3,6 +3,7 @@ import {
   Post,
   Get,
   Patch,
+  Put,
   Param,
   Body,
   UseGuards,
@@ -30,6 +31,10 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
 import { InvestmentsService } from './investments.service';
+import {
+  PortfolioSummary,
+  PortfolioSummaryService,
+} from './portfolio-summary.service';
 import { TaxReportService, TaxReportFormat } from './tax-report.service';
 import { TaxReportQueryDto } from './dto/tax-report-query.dto';
 import { CreateInvestmentDto } from './dto/create-investment.dto';
@@ -44,6 +49,12 @@ import { ReceiptService } from './receipt.service';
 import { InvoiceService } from './invoice.service';
 import { CancelInvestmentDto } from './dto/cancel-investment.dto';
 import { AuditInterceptor } from '../audit/audit.interceptor';
+import { PortfolioVaRService } from './portfolio-var.service';
+import {
+  PortfolioVaRQueryDto,
+  PortfolioVaRStressTestDto,
+  SetPortfolioVaRLimitDto,
+} from './dto/portfolio-var.dto';
 
 @ApiTags('investments')
 @ApiBearerAuth('jwt')
@@ -58,6 +69,8 @@ export class InvestmentsController {
     private readonly taxReportService: TaxReportService,
     private readonly receiptService: ReceiptService,
     private readonly invoiceService: InvoiceService,
+    private readonly portfolioSummaryService: PortfolioSummaryService,
+    private readonly portfolioVaRService: PortfolioVaRService,
   ) {}
 
   @Post()
@@ -252,6 +265,103 @@ export class InvestmentsController {
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
     });
+  }
+
+  @Get('summary')
+  @ApiOperation({
+    summary: 'Portfolio summary for the authenticated investor',
+    description:
+      'Totals and per-deal allocation used by the investor dashboard summary widget (#789). Cancelled and refunded positions are excluded from the invested total; realised amounts come from confirmed payment distributions.',
+  })
+  @ApiResponse({ status: 200, description: 'Portfolio summary' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Only investors can access this endpoint',
+  })
+  @UseGuards(KycGuard, RolesGuard)
+  @Roles('investor')
+  async getPortfolioSummary(
+    @Request() req: { user: { id: string } },
+  ): Promise<PortfolioSummary> {
+    return this.portfolioSummaryService.getSummary(req.user.id);
+  }
+
+  @Get('risk/var')
+  @ApiOperation({
+    summary: 'Calculate portfolio Value at Risk and Expected Shortfall',
+    description:
+      'Uses selected, validated commodity oracle observations and active portfolio exposures valued at invested amount.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Portfolio VaR, ES, components, and trend',
+  })
+  @UseGuards(KycGuard, RolesGuard)
+  @Roles('investor')
+  async getPortfolioVaR(
+    @Request() req: { user: { id: string } },
+    @Query() query: PortfolioVaRQueryDto,
+  ) {
+    return this.portfolioVaRService.calculate(req.user.id, query);
+  }
+
+  @Get('risk/var/backtest')
+  @ApiOperation({ summary: 'Backtest portfolio VaR against subsequent losses' })
+  @ApiResponse({ status: 200, description: 'Rolling historical VaR backtest' })
+  @UseGuards(KycGuard, RolesGuard)
+  @Roles('investor')
+  async backtestPortfolioVaR(
+    @Request() req: { user: { id: string } },
+    @Query() query: PortfolioVaRQueryDto,
+  ) {
+    return this.portfolioVaRService.backtest(req.user.id, query);
+  }
+
+  @Get('risk/var/report')
+  @ApiOperation({
+    summary: 'Generate a compliance-oriented portfolio VaR report',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'VaR calculation and backtest report',
+  })
+  @UseGuards(KycGuard, RolesGuard)
+  @Roles('investor')
+  async getPortfolioVaRReport(
+    @Request() req: { user: { id: string } },
+    @Query() query: PortfolioVaRQueryDto,
+  ) {
+    return this.portfolioVaRService.generateReport(req.user.id, query);
+  }
+
+  @Post('risk/var/stress-test')
+  @ApiOperation({ summary: 'Apply commodity price shocks to the portfolio' })
+  @ApiResponse({
+    status: 200,
+    description: 'Stressed portfolio values and losses',
+  })
+  @UseGuards(KycGuard, RolesGuard)
+  @Roles('investor')
+  async stressTestPortfolioVaR(
+    @Request() req: { user: { id: string } },
+    @Body() dto: PortfolioVaRStressTestDto,
+  ) {
+    return this.portfolioVaRService.stressTest(req.user.id, dto.scenarios);
+  }
+
+  @Put('risk/var/limit')
+  @ApiOperation({
+    summary: 'Set an investor VaR limit and enable breach alerts',
+  })
+  @ApiResponse({ status: 200, description: 'VaR limit saved' })
+  @UseGuards(KycGuard, RolesGuard)
+  @Roles('investor')
+  async setPortfolioVaRLimit(
+    @Request() req: { user: { id: string } },
+    @Body() dto: SetPortfolioVaRLimitDto,
+  ) {
+    return this.portfolioVaRService.setLimit(req.user.id, dto);
   }
 
   /**

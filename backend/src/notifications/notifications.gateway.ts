@@ -8,13 +8,16 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { WsJwtGuard } from './ws-jwt.guard';
+import { OptionalWsJwtGuard } from './ws-jwt.guard';
+
+/** Rooms that unauthenticated sockets are allowed to join. */
+export const PUBLIC_ROOMS = ['deal_funding_progress'] as const;
 
 @WebSocketGateway({
   cors: { origin: true, credentials: true },
   namespace: '/notifications',
 })
-@UseGuards(WsJwtGuard)
+@UseGuards(OptionalWsJwtGuard)
 export class NotificationsGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
@@ -25,38 +28,48 @@ export class NotificationsGateway
 
   constructor(
     private readonly jwtService: JwtService,
-    private readonly wsJwtGuard: WsJwtGuard,
+    private readonly wsJwtGuard: OptionalWsJwtGuard,
     private readonly notificationsService: NotificationsService,
   ) {}
 
   afterInit(server: Server): void {
     server.use((socket, next) => {
-      const token = this.wsJwtGuard.extractToken(socket as Socket);
+      const client = socket as Socket;
+      const token = this.wsJwtGuard.extractToken(client);
 
       if (!token) {
-        (socket as Socket).disconnect();
-        return next(new Error('Unauthorized'));
+        // Anonymous visitor: allow the connection but mark it unauthenticated.
+        this.wsJwtGuard.markAnonymous(client);
+        return next();
       }
 
       try {
-        this.wsJwtGuard.verifyAndStore(socket as Socket, token);
+        this.wsJwtGuard.verifyAndStore(client, token);
         next();
       } catch {
-        (socket as Socket).disconnect();
-        next(new Error('Unauthorized'));
+        // Invalid/expired token: fall back to anonymous instead of disconnecting.
+        this.wsJwtGuard.markAnonymous(client);
+        next();
       }
     });
   }
 
   async handleConnection(client: Socket): Promise<void> {
-    this.logger.debug(`Client connected: ${client.id}`);
     const user = (client as any).user;
     if (user?.id) {
+      this.logger.debug(`Authenticated client connected: ${client.id}`);
       const unreadCount = await this.notificationsService.getUnreadCount(
         user.id,
       );
       client.emit('handshake_response', { unreadCount });
       client.emit('unread_count', { count: unreadCount });
+    } else {
+      this.logger.debug(`Anonymous client connected: ${client.id}`);
+      // Anonymous sockets only get public rooms.
+      for (const room of PUBLIC_ROOMS) {
+        client.join(room);
+      }
+      client.emit('handshake_response', { unreadCount: 0, anonymous: true });
     }
   }
 
@@ -64,21 +77,19 @@ export class NotificationsGateway
     this.logger.debug(`Client disconnected: ${client.id}`);
   }
 
-  afterInitMessageValidation(server: Server): void {
-    server.use((socket, next) => {
-      const client = socket as Socket;
-      const token = this.wsJwtGuard.extractToken(client);
-      if (!token) {
-        client.emit('auth_error', { message: 'Token missing' });
-        client.disconnect(true);
-        return next(new Error('Unauthorized'));
-      }
-      try {
-        this.wsJwtGuard.verifyAndStore(client, token);
-        next();
-      } catch {
-        return next(new Error('Unauthorized'));
-      }
-    });
+  /**
+   * Subscribe a socket to a room. Sensitive rooms require authentication;
+   * anonymous sockets are rejected server-side.
+   */
+  handleSubscribe(client: Socket, room: string): void {
+    const isPublic = (PUBLIC_ROOMS as readonly string[]).includes(room);
+    const user = (client as any).user;
+
+    if (!isPublic && !user?.id) {
+      client.emit('auth_error', { message: 'Authentication required' });
+      return;
+    }
+
+    client.join(room);
   }
 }

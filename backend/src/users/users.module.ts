@@ -5,18 +5,24 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { UsersController } from './users.controller';
 import { PublicUsersController } from './public-users.controller';
 import { EmailPreferencesController } from './email-preferences.controller';
+import { CreditScoringController } from './credit-scoring.controller';
 import { UsersService } from './users.service';
 import { User } from '../auth/entities/user.entity';
 import { TradeDeal } from '../trade-deals/entities/trade-deal.entity';
 import { Investment } from '../investments/entities/investment.entity';
 import { ShipmentMilestone } from '../shipments/entities/shipment-milestone.entity';
+import { MilestoneVerification } from '../shipments/entities/milestone-verification.entity';
 import { PaymentDistribution } from '../escrow/entities/payment-distribution.entity';
 import { KycSubmission } from '../auth/entities/kyc-submission.entity';
 import { Document } from '../trade-deals/entities/document.entity';
 import { AuditLog } from '../database/entities/audit-log.entity';
 import { FarmerCreditScoreHistory } from './entities/farmer-credit-score-history.entity';
+import { FarmerCreditScoreDispute } from './entities/farmer-credit-score-dispute.entity';
 import { FarmerCreditScoringService } from './farmer-credit-scoring.service';
+import { FarmerCreditPerformanceService } from './farmer-credit-performance.service';
+import { FarmerCreditDisputeService } from './farmer-credit-dispute.service';
 import { TradeDealsModule } from '../trade-deals/trade-deals.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { redisCacheStore } from '../config/redis-cache.store';
 
 /** TTL for farmer reputation score cache entries (15 minutes in milliseconds). */
@@ -29,13 +35,16 @@ const REPUTATION_CACHE_TTL_MS = 15 * 60 * 1_000;
       TradeDeal,
       Investment,
       ShipmentMilestone,
+      MilestoneVerification,
       PaymentDistribution,
       KycSubmission,
       Document,
       AuditLog,
       FarmerCreditScoreHistory,
+      FarmerCreditScoreDispute,
     ]),
     TradeDealsModule,
+    NotificationsModule,
     CacheModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -52,8 +61,23 @@ const REPUTATION_CACHE_TTL_MS = 15 * 60 * 1_000;
       },
     }),
   ],
-  controllers: [UsersController, PublicUsersController, EmailPreferencesController],
-  providers: [UsersService, FarmerCreditScoringService],
-  exports: [UsersService, FarmerCreditScoringService],
+  controllers: [
+    UsersController,
+    PublicUsersController,
+    EmailPreferencesController,
+    CreditScoringController,
+  ],
+  providers: [
+    UsersService,
+    FarmerCreditScoringService,
+    FarmerCreditPerformanceService,
+    FarmerCreditDisputeService,
+  ],
+  exports: [
+    UsersService,
+    FarmerCreditScoringService,
+    FarmerCreditPerformanceService,
+    FarmerCreditDisputeService,
+  ],
 })
 export class UsersModule {}

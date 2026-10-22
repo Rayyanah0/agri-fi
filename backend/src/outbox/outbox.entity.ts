@@ -16,7 +16,12 @@ export interface OutboxEvent {
 }
 
 @Entity('outbox')
-@Index('idx_outbox_unprocessed', ['processed', 'retryCount', 'createdAt'])
+// Matches migration 2100000000000-AlignOutboxPendingIndex and the
+// `publishPending` worker query
+// (WHERE processed = FALSE AND retry_count < 10 ORDER BY created_at).
+@Index('idx_outbox_pending_scan', ['processed', 'retryCount', 'createdAt'], {
+  where: '"processed" = FALSE',
+})
 export class OutboxEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;

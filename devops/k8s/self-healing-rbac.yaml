@@ -1,0 +1,59 @@
+---
+# Least-privilege RBAC for the self-healing engine (#1194)
+#
+# The backend only needs a very small set of permissions to remediate an
+# issue:
+#
+#   pods        get, list, delete  - restart a failed pod
+#   deployments get, list, patch   - read the replica count and scale it
+#   events      get, list          - read the pod events for the diagnosis
+#
+# Nothing else is granted: the engine cannot read secrets, cannot exec into
+# a pod and cannot change any other resource.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agri-fi-self-healing
+  namespace: agri-fi
+  labels:
+    app.kubernetes.io/name: agri-fi
+    app.kubernetes.io/component: self-healing
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agri-fi-self-healing
+  namespace: agri-fi
+  labels:
+    app.kubernetes.io/name: agri-fi
+    app.kubernetes.io/component: self-healing
+rules:
+  - apiGroups: ['']
+    resources: ['pods']
+    verbs: ['get', 'list', 'delete']
+  - apiGroups: ['']
+    resources: ['events']
+    verbs: ['get', 'list']
+  - apiGroups: ['apps']
+    resources: ['deployments']
+    verbs: ['get', 'list', 'patch']
+  - apiGroups: ['apps']
+    resources: ['deployments/scale']
+    verbs: ['get', 'patch', 'update']
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agri-fi-self-healing
+  namespace: agri-fi
+  labels:
+    app.kubernetes.io/name: agri-fi
+    app.kubernetes.io/component: self-healing
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agri-fi-self-healing
+subjects:
+  - kind: ServiceAccount
+    name: agri-fi-self-healing
+    namespace: agri-fi

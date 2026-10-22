@@ -13,6 +13,7 @@ import { NotificationPreference } from './entities/notification-preference.entit
 import { PushSubscriptionEntity } from './entities/push-subscription.entity';
 import { PushNotificationService } from './push-notification.service';
 import { WsJwtGuard } from './ws-jwt.guard';
+import { OptionalWsJwtGuard } from './optional-ws-jwt.guard';
 import { SmsRateLimiterService } from './sms-rate-limiter.service';
 import { SMS_PROVIDER_TOKEN } from './providers/sms.provider';
 import { AfricasTalkingProvider } from './providers/africas-talking.provider';
@@ -40,6 +41,7 @@ import { SmsNotificationHelper } from './sms-notification-helper';
     SmsRateLimiterService,
     SmsNotificationHelper,
     WsJwtGuard,
+    OptionalWsJwtGuard,
     {
       provide: SMS_PROVIDER_TOKEN,
       useFactory: (configService: ConfigService) => {

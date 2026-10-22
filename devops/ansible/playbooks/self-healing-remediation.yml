@@ -1,0 +1,123 @@
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# Self-healing remediation playbook (#1194)
+#
+# The backend self-healing engine invokes this playbook through the Ansible
+# executor:
+#
+#   ansible-playbook devops/ansible/playbooks/self-healing-remediation.yml \
+#     -i devops/ansible/hosts.yaml \
+#     --extra-vars '{"self_healing_action":"cleanup_disk","self_healing_target":"web01"}'
+#
+# The playbook is idempotent, only performs the requested action and never
+# touches a protected component (database, ledger, settlement) on its own.
+# ─────────────────────────────────────────────────────────────────────────────
+- name: Self-healing infrastructure remediation
+  hosts: "{{ self_healing_target | default('all') }}"
+  become: true
+  gather_facts: false
+
+  vars:
+    self_healing_action: "manual"
+    self_healing_target: "all"
+    self_healing_namespace: "agri-fi"
+    self_healing_disk_threshold_percent: 90
+    self_healing_log_retention_days: 7
+    self_healing_service_name: "agri-fi-backend"
+
+  tasks:
+    - name: Validate the requested remediation action
+      ansible.builtin.assert:
+        that:
+          - self_healing_action in [
+              'restart_pod',
+              'restart_service',
+              'scale_up',
+              'scale_down',
+              'cleanup_disk',
+            ]
+        fail_msg: >-
+          Unsupported self-healing action "{{ self_healing_action }}".
+          Allowed actions: restart_pod, restart_service, scale_up, scale_down,
+          cleanup_disk.
+        quiet: true
+
+    - name: Restart the backend service
+      ansible.builtin.systemd:
+        name: "{{ self_healing_service_name }}"
+        state: restarted
+        daemon_reload: true
+      when: self_healing_action == 'restart_service'
+      register: self_healing_restart
+      failed_when: false
+
+    - name: Report the service restart result
+      ansible.builtin.debug:
+        msg: "Service {{ self_healing_service_name }} restarted"
+      when:
+        - self_healing_action == 'restart_service'
+        - self_healing_restart is not skipped
+
+    - name: Free disk space by vacuuming the journal
+      ansible.builtin.command:
+        cmd: journalctl --vacuum-size=200M
+      when: self_healing_action == 'cleanup_disk'
+      register: self_healing_journal
+      changed_when: self_healing_journal.rc == 0
+      failed_when: false
+
+    - name: Remove rotated log files older than the retention window
+      ansible.builtin.shell:
+        cmd: >-
+          find /var/log -type f -name '*.gz' -mtime +{{ self_healing_log_retention_days }} -delete
+      when: self_healing_action == 'cleanup_disk'
+      register: self_healing_logs
+      changed_when: self_healing_logs.rc == 0
+      failed_when: false
+
+    - name: Remove temporary files older than one day
+      ansible.builtin.shell:
+        cmd: find /tmp -type f -mtime +1 -delete
+      when: self_healing_action == 'cleanup_disk'
+      register: self_healing_tmp
+      changed_when: self_healing_tmp.rc == 0
+      failed_when: false
+
+    - name: Prune unused container images
+      ansible.builtin.command:
+        cmd: docker image prune --force --filter until=168h
+      when: self_healing_action == 'cleanup_disk'
+      register: self_healing_images
+      changed_when: self_healing_images.rc == 0
+      failed_when: false
+
+    - name: Restart a failed pod
+      ansible.builtin.command:
+        cmd: >-
+          kubectl delete pod {{ self_healing_target }}
+          --namespace {{ self_healing_namespace }}
+          --ignore-not-found
+      when: self_healing_action == 'restart_pod'
+      register: self_healing_pod
+      changed_when: self_healing_pod.rc == 0
+      failed_when: false
+
+    - name: Scale a deployment
+      ansible.builtin.command:
+        cmd: >-
+          kubectl scale deployment {{ self_healing_target | regex_replace('^.*/', '') }}
+          --namespace {{ self_healing_namespace }}
+          --replicas {{ self_healing_replicas | default(3) }}
+      when:
+        - self_healing_action in ['scale_up', 'scale_down']
+      register: self_healing_scale
+      changed_when: self_healing_scale.rc == 0
+      failed_when: false
+
+    - name: Report the disk usage after the cleanup
+      ansible.builtin.shell:
+        cmd: df -h / | tail -n 1
+      when: self_healing_action == 'cleanup_disk'
+      register: self_healing_df
+      changed_when: false
+      failed_when: false

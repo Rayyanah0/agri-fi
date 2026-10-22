@@ -56,9 +56,8 @@ export class SettlementService {
 
     // Idempotent: skip if already settled
     if (deal.settlementStatus === 'settled') {
-      this.logger.info(
-        { dealId: deal.id },
-        'Settlement already completed — skipping',
+      this.logger.log(
+        JSON.stringify({ dealId: deal.id, message: 'Settlement already completed — skipping' }),
       );
       return deal;
     }
@@ -112,9 +111,8 @@ export class SettlementService {
       deal.status = 'completed';
       await this.dealRepo.save(deal);
 
-      this.logger.info(
-        { dealId: deal.id, txHash },
-        'Campaign settled on-chain',
+      this.logger.log(
+        JSON.stringify({ dealId: deal.id, txHash, message: 'Campaign settled on-chain' }),
       );
       return deal;
     } catch (err: any) {

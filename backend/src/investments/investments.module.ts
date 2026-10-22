@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { InvestmentsService } from './investments.service';
+import { PortfolioSummaryService } from './portfolio-summary.service';
 import { InvestmentsController } from './investments.controller';
 import { FeeConfigurationService } from './fee-configuration.service';
 import { FeeConfigurationController } from './fee-configuration.controller';
@@ -24,6 +25,15 @@ import { MarketplaceSettlementController } from './marketplace-settlement.contro
 import { TaxReportService } from './tax-report.service';
 import { ReceiptService } from './receipt.service';
 import { AccreditationModule } from '../accreditation/accreditation.module';
+import { StressTestingModule } from '../stress-testing/stress-testing.module';
+import { LiquidityRiskService } from './liquidity-risk.service';
+import { LiquidityRiskController } from './liquidity-risk.controller';
+import { LiquiditySnapshot } from './entities/liquidity-snapshot.entity';
+import { PortfolioVaRService } from './portfolio-var.service';
+import { PortfolioVaRLimit } from './entities/portfolio-var-limit.entity';
+import { OracleFeed } from '../oracles/entities/oracle-feed.entity';
+import { OracleObservation } from '../oracles/entities/oracle-observation.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -37,21 +47,29 @@ import { AccreditationModule } from '../accreditation/accreditation.module';
       User,
       FeeConfiguration,
       PaymentDistribution,
+      LiquiditySnapshot,
+      PortfolioVaRLimit,
+      OracleFeed,
+      OracleObservation,
     ]),
     StellarModule,
     QueueModule,
     ReferralModule,
     AuthModule,
     AccreditationModule,
+    StressTestingModule,
+    NotificationsModule,
   ],
   controllers: [
     InvestmentsController,
     FeeConfigurationController,
     MarketplaceSettlementController,
     AutoInvestController,
+    LiquidityRiskController,
   ],
   providers: [
     InvestmentsService,
+    PortfolioSummaryService,
     InvestmentEventStore,
     FeeCalculatorService,
     FeeConfigurationService,
@@ -63,6 +81,8 @@ import { AccreditationModule } from '../accreditation/accreditation.module';
     SecondaryOrderMatchingService,
     AutoInvestService,
     RiskScoringService,
+    LiquidityRiskService,
+    PortfolioVaRService,
   ],
   exports: [
     InvestmentsService,
@@ -73,6 +93,8 @@ import { AccreditationModule } from '../accreditation/accreditation.module';
     MarketplaceSettlementService,
     SecondaryOrderMatchingService,
     AutoInvestService,
+    LiquidityRiskService,
+    PortfolioVaRService,
   ],
 })
 export class InvestmentsModule {}

@@ -7,6 +7,7 @@ import {
   Query,
   Body,
   UseGuards,
+  UseInterceptors,
   HttpCode,
   HttpStatus,
   NotFoundException,
@@ -25,10 +26,13 @@ import { PublicDealQueryDto } from './dto/public-deal-query.dto';
 import { CreatePublicWebhookSubscriptionDto } from './dto/public-webhook.dto';
 import { TradeDealsService } from '../trade-deals/trade-deals.service';
 import { WebhooksService } from '../webhooks/webhooks.service';
+import { ApiUsageInterceptor } from './api-usage.interceptor';
+import { ApiUsageQuotaGuard } from './api-usage-quota.guard';
 
 @ApiTags('Public v1 - Partners & Integrations')
 @ApiSecurity('apiKey')
-@UseGuards(ApiKeyGuard, ApiKeyThrottlerGuard)
+@UseGuards(ApiKeyGuard, ApiUsageQuotaGuard, ApiKeyThrottlerGuard)
+@UseInterceptors(ApiUsageInterceptor)
 @Controller('v1/public')
 export class PublicApiController {
   constructor(

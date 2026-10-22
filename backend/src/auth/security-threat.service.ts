@@ -19,6 +19,16 @@ export interface LoginThreatVerdict {
   reasons: string[];
 }
 
+/** #1222 — Behavioral risk score fed from continuous authentication. */
+export interface BehavioralRiskSignal {
+  /** Normalized risk score in the range [0, 1]. */
+  riskScore: number;
+  /** Optional user identifier the signal belongs to. */
+  userId?: string;
+  /** Optional human-readable reasons describing the anomaly. */
+  reasons?: string[];
+}
+
 /**
  * #898 — Credential-stuffing / rate-limit-bypass detection.
  *
@@ -50,6 +60,10 @@ export class SecurityThreatService implements OnModuleInit, OnModuleDestroy {
   readonly subnetFailThreshold: number;
   /** Distinct countries per email before geo anomaly is flagged. */
   readonly geoCountriesThreshold: number;
+  /** Behavioral risk score at/above which a CAPTCHA is required. */
+  readonly behavioralCaptchaThreshold: number;
+  /** Behavioral risk score at/above which the session is blocked. */
+  readonly behavioralBlockThreshold: number;
 
   private readonly badRanges: { network: number; prefix: number }[] = [];
 
@@ -70,6 +84,12 @@ export class SecurityThreatService implements OnModuleInit, OnModuleDestroy {
     );
     this.geoCountriesThreshold = Number(
       config.get<number>('SECURITY_GEO_COUNTRIES_THRESHOLD', 3),
+    );
+    this.behavioralCaptchaThreshold = Number(
+      config.get<number>('SECURITY_BEHAVIORAL_CAPTCHA_THRESHOLD', 0.6),
+    );
+    this.behavioralBlockThreshold = Number(
+      config.get<number>('SECURITY_BEHAVIORAL_BLOCK_THRESHOLD', 0.85),
     );
     this.badRanges = this.parseBadRanges(
       config.get<string>('SECURITY_BAD_IP_RANGES', ''),
@@ -180,6 +200,54 @@ export class SecurityThreatService implements OnModuleInit, OnModuleDestroy {
       );
       return false;
     }
+  }
+
+  // ── behavioral risk integration (#1222) ────────────────────────────────────
+
+  /**
+   * Escalates a behavioral-biometrics risk score into a threat verdict so
+   * continuous-authentication anomalies feed the existing security pipeline.
+   *
+   * - score >= {@link behavioralBlockThreshold} → blocked (and the user is
+   *   flagged for CAPTCHA on subsequent logins).
+   * - score >= {@link behavioralCaptchaThreshold} → CAPTCHA required.
+   * - otherwise → allow.
+   *
+   * High-risk signals also emit a security-team alert. All Redis operations
+   * no-op safely when Redis is unavailable.
+   */
+  async evaluateBehavioralRisk(
+    signal: BehavioralRiskSignal,
+  ): Promise<LoginThreatVerdict> {
+    const reasons: string[] = [...(signal.reasons ?? [])];
+    const score = Number.isFinite(signal.riskScore)
+      ? Math.min(1, Math.max(0, signal.riskScore))
+      : 0;
+
+    if (score >= this.behavioralBlockThreshold) {
+      reasons.push('behavioral_risk_blocked');
+      if (signal.userId) {
+        const key = `sec:behavioral:${this.normEmail(signal.userId)}`;
+        await this.client()?.setEx(key, 1800, '1');
+      }
+      await this.alertSecurityTeam(
+        'Behavioral biometrics flagged a high-risk session',
+        `A session${signal.userId ? ` for ${signal.userId}` : ''} produced a behavioral risk score of ${score.toFixed(2)}, exceeding the block threshold of ${this.behavioralBlockThreshold}.`,
+        { type: 'behavioral_risk', score, userId: signal.userId },
+      );
+      return { action: 'blocked', captchaRequired: false, reasons };
+    }
+
+    if (score >= this.behavioralCaptchaThreshold) {
+      reasons.push('behavioral_risk_captcha');
+      if (signal.userId) {
+        const key = `sec:behavioral:${this.normEmail(signal.userId)}`;
+        await this.client()?.setEx(key, 1800, '1');
+      }
+      return { action: 'captcha', captchaRequired: true, reasons };
+    }
+
+    return { action: 'allow', captchaRequired: false, reasons };
   }
 
   // ── signal recording ───────────────────────────────────────────────────────

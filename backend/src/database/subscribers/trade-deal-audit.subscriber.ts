@@ -10,6 +10,11 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { ClsService } from 'nestjs-cls';
 import { AuditLog } from '../entities/audit-log.entity';
 import { TradeDeal } from '../../trade-deals/entities/trade-deal.entity';
+import {
+  auditRetentionPeriod,
+  auditRetentionUntil,
+  classifyAuditLog,
+} from '../../audit/audit-retention-policy';
 
 const SENSITIVE_FIELDS = new Set(['escrowSecretKey', 'issuerSecretKey']);
 
@@ -62,6 +67,9 @@ export class TradeDealAuditSubscriber implements EntitySubscriberInterface<Trade
       newValues: sanitize(entity ?? null),
       changes: JSON.stringify(sanitize(entity ?? null)),
       userId: this.getUserId(),
+      logType: classifyAuditLog('TradeDeal'),
+      retentionPeriod: auditRetentionPeriod(classifyAuditLog('TradeDeal')),
+      retentionUntil: auditRetentionUntil(classifyAuditLog('TradeDeal')),
     } as any);
   }
 
@@ -82,6 +90,9 @@ export class TradeDealAuditSubscriber implements EntitySubscriberInterface<Trade
       newValues: sanitize(entity ?? null),
       changes: JSON.stringify(updatedColumns),
       userId: this.getUserId(),
+      logType: classifyAuditLog('TradeDeal'),
+      retentionPeriod: auditRetentionPeriod(classifyAuditLog('TradeDeal')),
+      retentionUntil: auditRetentionUntil(classifyAuditLog('TradeDeal')),
     } as any);
   }
 }

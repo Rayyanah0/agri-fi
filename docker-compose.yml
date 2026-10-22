@@ -76,6 +76,13 @@ services:
       - CLAMAV_PORT=3310
       # SEP-10 Stellar Web Auth domain configuration (see docs/auth/sep10-flow.md)
       - SEP10_DOMAIN=agri-fi.com
+      # Distributed tracing (#1233) — export OTLP spans to the collector.
+      - OTEL_SERVICE_NAME=agri-fi-backend
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
+      - OTEL_TRACES_SAMPLER=parentbased_traceidratio
+      - OTEL_TRACES_SAMPLER_ARG=1.0
+      - OTEL_RESOURCE_ATTRIBUTES=deployment.environment=local
+      - OTEL_SDK_DISABLED=false
     depends_on:
       postgres:
         condition: service_healthy
@@ -83,6 +90,8 @@ services:
         condition: service_healthy
       clamav:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/v1/health"]
       interval: 30s
@@ -193,6 +202,35 @@ services:
       - grafana_data:/var/lib/grafana
     depends_on:
       - prometheus
+    restart: unless-stopped
+
+  # ── OpenTelemetry Collector + Jaeger (#1233) ────────────────────────────────
+  # Receives OTLP traces from the backend, forwards them to Jaeger and derives
+  # RED metrics on :8889 for Prometheus alerting.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.110.0
+    command: ["--config=/etc/otel/collector-config.yaml"]
+    volumes:
+      - ./devops/otel/collector-config.yaml:/etc/otel/collector-config.yaml:ro
+    ports:
+      - '4317:4317'   # OTLP gRPC
+      - '4318:4318'   # OTLP HTTP
+      - '8889:8889'   # Prometheus span metrics
+      - '13133:13133' # health check
+    depends_on:
+      - jaeger
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    environment:
+      COLLECTOR_OTLP_ENABLED: 'true'
+      # In-memory storage with a bounded trace count. Production should use a
+      # durable backend (Elasticsearch/Cassandra) — see the tracing docs.
+      SPAN_STORAGE_TYPE: memory
+      MEMORY_MAX_TRACES: '50000'
+    ports:
+      - '16686:16686' # Jaeger UI
     restart: unless-stopped
 
 volumes:

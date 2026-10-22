@@ -10,6 +10,7 @@ export interface RequestWithCorrelationId extends Request {
   /**
    * Alias for correlationId used by Pino serializers / Fluentd log collectors.
    * Both fields carry the same value so existing dashboards keep working.
+   * When OpenTelemetry tracing is active this is the W3C trace id (#1233).
    */
   traceId: string;
 }
@@ -27,6 +28,7 @@ export interface RequestWithCorrelationId extends Request {
  *     responses back to a log stream.
  *
  * Accepted inbound headers (in priority order):
+ *   an OTel trace id already resolved by TracingMiddleware (#1233),
  *   x-trace-id, x-correlation-id, correlation-id
  */
 @Injectable()
@@ -37,7 +39,10 @@ export class CorrelationIdMiddleware implements NestMiddleware {
   ) {}
 
   use(req: RequestWithCorrelationId, res: Response, next: NextFunction): void {
+    // Prefer the OpenTelemetry trace id resolved from the W3C `traceparent`
+    // header by TracingMiddleware; fall back to the legacy headers, then uuid.
     const traceId =
+      req.traceId ||
       (req.headers['x-trace-id'] as string) ||
       (req.headers['x-correlation-id'] as string) ||
       (req.headers['correlation-id'] as string) ||

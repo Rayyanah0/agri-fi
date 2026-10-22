@@ -1,0 +1,27 @@
+[
+  {
+    "name": "agri-fi-support-viewer-mapping",
+    "enabled": true,
+    "roles": ["agri_fi_logs_viewer"],
+    "rules": {
+      "any": [
+        { "field": { "groups": "agri-fi-support" } },
+        { "field": { "groups": "agri-fi-oncall" } }
+      ]
+    },
+    "metadata": {
+      "description": "Maps the SSO support/on-call groups to the read-only log viewer role"
+    }
+  },
+  {
+    "name": "agri-fi-platform-admin-mapping",
+    "enabled": true,
+    "roles": ["agri_fi_logs_admin"],
+    "rules": {
+      "field": { "groups": "agri-fi-platform-admins" }
+    },
+    "metadata": {
+      "description": "Maps the SSO platform-admin group to the log admin role"
+    }
+  }
+]

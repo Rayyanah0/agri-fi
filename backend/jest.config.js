@@ -39,10 +39,10 @@ module.exports = {
     },
     // Directory-specific thresholds for stricter enforcement on core modules
     './src/auth/': {
-      statements: 55,
-      branches: 35,
-      functions: 55,
-      lines: 55,
+      statements: 70,
+      branches: 45,
+      functions: 70,
+      lines: 70,
     },
     './src/database/': {
       statements: 8,

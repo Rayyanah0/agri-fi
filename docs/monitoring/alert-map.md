@@ -27,6 +27,28 @@ This map is the on-call quick reference for the Prometheus rules in [devops/prom
 | StellarTxFailureRate | `(rate(escrow_stellar_tx_failures_total[5m]) / rate(escrow_stellar_tx_total[5m])) * 100 > 5` | critical | backend | backend-oncall | Elevated Stellar blockchain failures. Check Horizon node health, fee stats, and account sequences. | [docs/runbooks/escrow.md](../runbooks/escrow.md) |
 | OutboxStalledEvents | `outbox_pending_count > 50` | warning | backend | backend-oncall | Transactional outbox relay backlog. Check DB connection pool and RabbitMQ broker availability. | [docs/runbooks/escrow.md](../runbooks/escrow.md) |
 
+### Self-healing alerts (#1194)
+
+These rules live in [devops/prometheus/self-healing-alerts.yaml](../../devops/prometheus/self-healing-alerts.yaml) and carry the `self_healing: "true"` label. The backend turns them into detected issues and remediates them automatically when the safety policy allows it, so an on-call engineer usually only sees the notification, not the alert.
+
+| Alert | Metric / signal | Severity | Team | Owner | Triage step | Runbook |
+| --- | --- | --- | --- | --- | --- | --- |
+| SelfHealingPodCrashLoop | `sum by (namespace, pod) (increase(kube_pod_container_status_restarts_total[15m])) > 3` | critical | platform | platform-oncall | The engine restarts the pod and diagnoses the previous container state. Confirm the crash cause in the container logs. | [docs/devops/self-healing.md](../devops/self-healing.md) |
+| SelfHealingPodNotReady | `min by (namespace, pod) (kube_pod_status_ready{condition="true"}) == 0` | critical | platform | platform-oncall | The engine restarts the pod. If it stays unready, the readiness probe or the dependency is broken. | [docs/devops/self-healing.md](../devops/self-healing.md) |
+| SelfHealingDeploymentUnavailable | `sum by (namespace, deployment) (kube_deployment_status_replicas_unavailable) > 0` | critical | platform | platform-oncall | The engine checks the affected pods. Verify the rollout and the image tag. | [docs/devops/self-healing.md](../devops/self-healing.md) |
+| SelfHealingContainerMemoryHigh | `container_memory_working_set_bytes / container_spec_memory_limit_bytes > 0.85` | warning | platform | platform-oncall | The engine restarts the container. Raise the memory limit when it happens repeatedly. | [docs/devops/self-healing.md](../devops/self-healing.md) |
+| SelfHealingContainerMemoryCritical | `container_memory_working_set_bytes / container_spec_memory_limit_bytes > 0.95` | critical | platform | platform-oncall | The engine restarts the container before it is OOM-killed. Profile the workload for a leak. | [docs/devops/self-healing.md](../devops/self-healing.md) |
+| SelfHealingNodeDiskFull | `node_filesystem_avail_bytes / node_filesystem_size_bytes < 0.1` | critical | platform | platform-oncall | The engine proposes a disk cleanup that requires an approval. Check for a log or image explosion. | [docs/devops/self-healing.md](../devops/self-healing.md) |
+| SelfHealingNodeDiskWarning | `node_filesystem_avail_bytes / node_filesystem_size_bytes < 0.2` | warning | platform | platform-oncall | Free space before the critical threshold is reached. | [docs/devops/self-healing.md](../devops/self-healing.md) |
+| SelfHealingNodeMemoryPressure | `node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.1` | critical | platform | platform-oncall | The engine escalates because rescheduling is not safe to automate. Drain the node. | [docs/devops/self-healing.md](../devops/self-healing.md) |
+| SelfHealingBackendErrorRate | `sum(rate(http_request_errors_total{status_code=~"5.."}[5m])) > 1` | critical | backend | backend-oncall | The engine proposes a rollout restart that requires an approval. Correlate with the last deployment. | [docs/devops/self-healing.md](../devops/self-healing.md) |
+| SelfHealingBackendLatencyHigh | `histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[5m]))) > 2` | warning | backend | backend-oncall | The engine escalates. Check the downstream dependency latency. | [docs/devops/self-healing.md](../devops/self-healing.md) |
+| SelfHealingQueueBacklog | `rabbitmq_queue_messages{queue="escrow.process"} > 500` | warning | backend | backend-oncall | The engine adds one replica to the consumer deployment. Verify the consumer throughput. | [docs/devops/self-healing.md](../devops/self-healing.md) |
+| SelfHealingRedisMemoryHigh | `(redis_memory_used_bytes / redis_memory_max_bytes) * 100 > 85` | warning | backend | backend-oncall | The engine escalates because a cache restart does not fix a key growth problem. Review the TTLs. | [docs/devops/self-healing.md](../devops/self-healing.md) |
+| SelfHealingDatabaseSaturation | `agri_fi:pg_connections_pct > 85` | critical | backend | backend-oncall | The engine escalates because scaling out would increase the pressure. Terminate long running sessions. | [docs/devops/self-healing.md](../devops/self-healing.md) |
+| SelfHealingPgBouncerPoolHigh | `agri_fi:pgbouncer_server_pool_pct > 85` | warning | backend | backend-oncall | The engine escalates. Reload the pgbouncer configuration when the pool size drifted. | [docs/devops/self-healing.md](../devops/self-healing.md) |
+| SelfHealingCertificateExpiring | `(probe_ssl_earliest_cert_expiry - time()) < 1209600` | warning | platform | platform-oncall | The engine proposes the certificate renewal script, which requires an approval. | [docs/devops/self-healing.md](../devops/self-healing.md) |
+
 ## Decision guide
 
 1. If the alert is warning and the metric is trending steadily upward, investigate the app layer before opening a major incident.

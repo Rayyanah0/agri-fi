@@ -5,24 +5,52 @@
       "index.lifecycle.name": "agri-fi-logs-retention",
       "index.lifecycle.rollover_alias": "agri-fi-logs",
       "number_of_shards": 1,
-      "number_of_replicas": 0
+      "number_of_replicas": 0,
+      "index.mapping.total_fields.limit": 2000
     },
     "mappings": {
+      "dynamic": true,
       "properties": {
         "@timestamp": {
+          "type": "date"
+        },
+        "timestamp": {
           "type": "date"
         },
         "message": {
           "type": "text"
         },
+        "msg": {
+          "type": "text"
+        },
         "log": {
           "type": "text"
         },
-        "kubernetes": {
-          "type": "object",
-          "enabled": true
+        "level": {
+          "type": "keyword"
+        },
+        "service": {
+          "type": "keyword"
+        },
+        "version": {
+          "type": "keyword"
+        },
+        "environment": {
+          "type": "keyword"
+        },
+        "context": {
+          "type": "keyword"
+        },
+        "traceId": {
+          "type": "keyword"
+        },
+        "spanId": {
+          "type": "keyword"
         },
         "correlationId": {
+          "type": "keyword"
+        },
+        "userId": {
           "type": "keyword"
         },
         "txHash": {
@@ -37,8 +65,34 @@
         "status": {
           "type": "keyword"
         },
-        "level": {
-          "type": "keyword"
+        "req": {
+          "type": "object",
+          "properties": {
+            "method": { "type": "keyword" },
+            "url": { "type": "keyword" },
+            "route": { "type": "keyword" },
+            "userAgent": { "type": "keyword" },
+            "traceId": { "type": "keyword" },
+            "correlationId": { "type": "keyword" }
+          }
+        },
+        "res": {
+          "type": "object",
+          "properties": {
+            "statusCode": { "type": "long" }
+          }
+        },
+        "kubernetes": {
+          "type": "object",
+          "enabled": true
+        },
+        "container": {
+          "type": "object",
+          "enabled": true
+        },
+        "host": {
+          "type": "object",
+          "enabled": true
         }
       }
     }

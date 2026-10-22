@@ -1,0 +1,62 @@
+name: Visual Regression
+
+on:
+  pull_request:
+    paths:
+      - "frontend/**"
+      - ".github/workflows/visual-regression.yml"
+  schedule:
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  visual-regression:
+    name: Frontend visual regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+        working-directory: frontend
+
+      - name: Run visual regression tests
+        run: pnpm test:visual
+        working-directory: frontend
+        env:
+          CI: true
+          NEXT_PUBLIC_API_URL: http://localhost:3001
+          BACKEND_URL: http://localhost:3001
+
+      - name: Summarize pass rate and flakiness
+        if: always()
+        run: pnpm test:visual:analytics
+        working-directory: frontend
+
+      - name: Upload screenshots, diffs, and reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-regression-${{ github.run_number }}
+          path: |
+            frontend/visual-playwright-report/
+            frontend/visual-test-results/
+          if-no-files-found: warn
+          retention-days: 30

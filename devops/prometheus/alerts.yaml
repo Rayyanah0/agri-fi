@@ -420,7 +420,7 @@ groups:
     rules:
       # ── Escrow queue depth warning (>500 for 5m) ───────────────────────────
       - alert: EscrowQueueDepthHigh
-        expr: rabbitmq_queue_messages{queue="escrow.process"} > 500
+        expr: rabbitmq_queue_messages{queue="agric_onchain_escrow_queue"} > 500
         for: 5m
         labels:
           severity: warning
@@ -441,7 +441,7 @@ groups:
 
       # ── Escrow queue depth critical (>2000 for 2m) ─────────────────────────
       - alert: EscrowQueueDepthCritical
-        expr: rabbitmq_queue_messages{queue="escrow.process"} > 2000
+        expr: rabbitmq_queue_messages{queue="agric_onchain_escrow_queue"} > 2000
         for: 2m
         labels:
           severity: critical
@@ -463,7 +463,7 @@ groups:
 
       # ── DLQ message count increased in last 15m ────────────────────────────
       - alert: DLQGrowing
-        expr: increase(rabbitmq_queue_messages{queue="escrow.dlq"}[15m]) > 0
+        expr: increase(rabbitmq_queue_messages{queue="agric_onchain_escrow_queue.dlq"}[15m]) > 0
         for: 0m
         labels:
           severity: warning
@@ -483,7 +483,7 @@ groups:
 
       # ── DLQ has messages for more than 1h ──────────────────────────────────
       - alert: DLQNotEmpty
-        expr: rabbitmq_queue_messages{queue="escrow.dlq"} > 0
+        expr: rabbitmq_queue_messages{queue="agric_onchain_escrow_queue.dlq"} > 0
         for: 1h
         labels:
           severity: critical
@@ -505,7 +505,7 @@ groups:
 
       # ── Consumer lag exceeds 100 for 10m ───────────────────────────────────
       - alert: EscrowConsumerLag
-        expr: rabbitmq_queue_consumers{queue="escrow.process"} == 0
+        expr: rabbitmq_queue_consumers{queue="agric_onchain_escrow_queue"} == 0
         for: 10m
         labels:
           severity: warning
@@ -675,3 +675,82 @@ groups:
             The Stellar metrics endpoint on {{ $labels.instance }} has
             been unreachable for more than 2 minutes. Horizon health
             alerts cannot be evaluated. Check backend service health.
+
+  # ── Distributed tracing RED alerts (#1233) ──────────────────────────────────
+  # Metrics are derived from OTLP traces by the OpenTelemetry Collector's
+  # spanmetrics connector and scraped from otel-collector:8889.
+  - name: agri_fi_distributed_tracing
+    interval: 30s
+    rules:
+      # ── Elevated service error rate (spans with error status) ─────────────
+      - alert: TracingHighServiceErrorRate
+        expr: |
+          (
+            sum(rate(calls_total{status_code="STATUS_CODE_ERROR"}[5m])) by (service_name)
+            /
+            sum(rate(calls_total[5m])) by (service_name)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+          component: tracing
+        annotations:
+          summary: "Service {{ $labels.service_name }} error rate above 5%"
+          description: >
+            More than 5% of traced requests to {{ $labels.service_name }} have
+            failed over the last 5 minutes (current: {{ $value | humanizePercentage }}).
+            Inspect the failing traces in Jaeger to find the root span.
+
+      # ── Critically elevated service error rate ────────────────────────────
+      - alert: TracingCriticalServiceErrorRate
+        expr: |
+          (
+            sum(rate(calls_total{status_code="STATUS_CODE_ERROR"}[5m])) by (service_name)
+            /
+            sum(rate(calls_total[5m])) by (service_name)
+          ) > 0.25
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+          component: tracing
+        annotations:
+          summary: "Service {{ $labels.service_name }} error rate above 25%"
+          description: >
+            More than 25% of traced requests to {{ $labels.service_name }} are
+            failing. Treat as a service incident.
+
+      # ── p95 request latency degraded ──────────────────────────────────────
+      - alert: TracingP95LatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(latency_bucket[5m])) by (le, service_name)
+          ) > 2000
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+          component: tracing
+        annotations:
+          summary: "p95 latency for {{ $labels.service_name }} above 2s"
+          description: >
+            The 95th percentile request latency for {{ $labels.service_name }}
+            has exceeded 2 seconds for 5 minutes (current: {{ $value }}ms).
+            Use the slowest traces in Jaeger to identify the bottleneck span.
+
+      # ── Collector not receiving/exporting spans ───────────────────────────
+      - alert: TracingCollectorDown
+        expr: up{job="otel-collector"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          team: platform
+          component: tracing
+        annotations:
+          summary: "OpenTelemetry Collector is unreachable"
+          description: >
+            Prometheus cannot scrape span metrics from the OpenTelemetry
+            Collector. Traces may be dropped and tracing-based alerts cannot be
+            evaluated. Check the collector container/logs.

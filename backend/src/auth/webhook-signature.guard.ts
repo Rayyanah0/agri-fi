@@ -17,7 +17,14 @@ const SIGNATURE_HEADER = 'x-webhook-signature';
  * lowercase hex digest of HMAC-SHA256(rawBody, WEBHOOK_SECRET).
  *
  * Requires the NestJS app to be bootstrapped with `{ rawBody: true }` so
- * that `req.rawBody` is populated before JSON parsing.
+ * that `req.rawBody` is populated before JSON parsing. Without it the body is
+ * already parsed by the time the guard runs and the original bytes — the ones
+ * the HMAC was computed over — are gone.
+ *
+ * For routes that deliberately receive an unparsed body (e.g. `express.raw()`
+ * middleware), `req.body` is accepted when it is still a `Buffer` or string.
+ * A parsed object is never re-serialised for verification: JSON re-encoding is
+ * not byte-stable, so verification would be unreliable by construction.
  */
 @Injectable()
 export class WebhookSignatureGuard implements CanActivate {
@@ -36,9 +43,12 @@ export class WebhookSignatureGuard implements CanActivate {
       );
     }
 
-    const rawBody = req.rawBody;
-    if (!rawBody || rawBody.length === 0) {
-      throw new UnauthorizedException('Request body is empty.');
+    const rawBody = this.resolveRawBody(req);
+    if (!rawBody) {
+      throw new UnauthorizedException(
+        'Request body is empty or was parsed before signature verification. ' +
+          'Ensure the application is bootstrapped with rawBody: true.',
+      );
     }
 
     const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
@@ -54,5 +64,29 @@ export class WebhookSignatureGuard implements CanActivate {
     }
 
     return true;
+  }
+
+  /**
+   * Returns the exact request bytes the signature covers.
+   *
+   * `req.rawBody` is populated by Nest's raw-body support and is always the
+   * preferred source. `req.body` is only used when it is still an untouched
+   * `Buffer`/string (no JSON parser has run over it).
+   */
+  private resolveRawBody(req: RawBodyRequest<Request>): Buffer | null {
+    const rawBody = req.rawBody;
+    if (rawBody && rawBody.length > 0) {
+      return Buffer.isBuffer(rawBody) ? rawBody : Buffer.from(rawBody);
+    }
+
+    const body: unknown = req.body;
+    if (Buffer.isBuffer(body) && body.length > 0) {
+      return body;
+    }
+    if (typeof body === 'string' && body.length > 0) {
+      return Buffer.from(body, 'utf8');
+    }
+
+    return null;
   }
 }

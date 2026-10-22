@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
 import { EntityManager } from 'typeorm';
 import { PinoLogger } from 'nestjs-pino';
@@ -6,6 +6,7 @@ import { ClsService } from 'nestjs-cls';
 import { QUEUE_SERVICE } from './queue.constants';
 import { encryptPayload } from './queue.crypto';
 import { OutboxService } from '../outbox/outbox.service';
+import { QueueAnalyticsService } from './queue-analytics.service';
 
 export interface BasePayload {
   correlationId?: string;
@@ -72,12 +73,19 @@ export interface DealCleanupPayload extends BasePayload {
   tradeDealId: string;
 }
 
+/** Issue #953: payload for the escrow.release_notify queue event. */
+export interface EscrowReleaseNotifyPayload extends BasePayload {
+  dealId: string;
+  tradeTokenCode: string;
+}
+
 const EVENTS = {
   DEAL_DELIVERED: 'deal.delivered',
   INVESTMENT_FUND: 'investment.fund',
   DEAL_FUNDED: 'deal.funded',
   DEAL_PUBLISH: 'deal.publish',
   DEAL_CLEANUP: 'deal.cleanup',
+  ESCROW_RELEASE_NOTIFY: 'escrow.release_notify',
 } as const;
 
 @Injectable()
@@ -87,13 +95,17 @@ export class QueueService implements TransactionalQueueService {
     private readonly logger: PinoLogger,
     private readonly cls: ClsService,
     private readonly outboxService: OutboxService,
+    @Optional() private readonly analytics?: QueueAnalyticsService,
   ) {
     (this.logger as any).setContext(QueueService.name);
   }
 
   public async emit(pattern: string, data: unknown): Promise<void> {
     try {
-      this.client.emit(pattern, encryptPayload(data));
+      // The queue name is bound as AAD so the ciphertext cannot be replayed
+      // onto a different queue.
+      this.client.emit(pattern, encryptPayload(data, pattern));
+      this.analytics?.record(pattern, 'published');
       this.logger.info({ event: pattern }, `Emitted event: ${pattern}`);
     } catch (err) {
       this.logger.error(

@@ -2,12 +2,23 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { NotFoundException } from '@nestjs/common';
+import {
+  NotFoundException,
+  BadRequestException,
+  UnauthorizedException,
+  ForbiddenException,
+} from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 import { User } from './entities/user.entity';
 import { KycSubmission } from './entities/kyc-submission.entity';
+import { LoginLog } from '../database/entities/login-log.entity';
+import { AdminAction } from '../database/entities/admin-action.entity';
 import { QueueService } from '../queue/queue.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { OfacSanctionsCheckService } from './utils/ofac-sanctions-check';
+import { TokenBlocklistService } from './token-blocklist.service';
+import { SecurityThreatService } from './security-threat.service';
 
 const mockUser = (): User => ({
   id: 'uuid-1',
@@ -36,8 +47,14 @@ describe('AuthService', () => {
     findAndCount: jest.Mock;
   };
   let kycRepo: { findOne: jest.Mock; create: jest.Mock; save: jest.Mock };
-  let jwtService: { sign: jest.Mock };
+  let loginLogRepo: { find: jest.Mock; save: jest.Mock; create: jest.Mock };
+  let adminActionRepo: { save: jest.Mock; create: jest.Mock };
+  let jwtService: { sign: jest.Mock; verify: jest.Mock; decode: jest.Mock };
   let configService: { get: jest.Mock };
+  let notificationsService: { sendEmail: jest.Mock };
+  let ofacSanctionsCheck: { isAddressSanctioned: jest.Mock };
+  let tokenBlocklistService: any;
+  let securityThreat: any;
 
   beforeEach(async () => {
     userRepo = {
@@ -47,17 +64,43 @@ describe('AuthService', () => {
       findAndCount: jest.fn(),
     };
     kycRepo = { findOne: jest.fn(), create: jest.fn(), save: jest.fn() };
-    jwtService = { sign: jest.fn().mockReturnValue('token') };
+    loginLogRepo = { find: jest.fn(), save: jest.fn(), create: jest.fn() };
+    adminActionRepo = { save: jest.fn(), create: jest.fn() };
+    jwtService = {
+      sign: jest.fn().mockReturnValue('token'),
+      verify: jest.fn(),
+      decode: jest.fn(),
+    };
     configService = { get: jest.fn() };
+    notificationsService = { sendEmail: jest.fn().mockResolvedValue(undefined) };
+    ofacSanctionsCheck = { isAddressSanctioned: jest.fn().mockResolvedValue(false) };
+    tokenBlocklistService = {
+      isTokenFamilyRevoked: jest.fn().mockResolvedValue(false),
+      isRefreshTokenRotated: jest.fn().mockResolvedValue(false),
+      markRefreshTokenRotated: jest.fn().mockResolvedValue(undefined),
+      revokeTokenFamily: jest.fn().mockResolvedValue(undefined),
+      blocklistToken: jest.fn().mockResolvedValue(undefined),
+    };
+    securityThreat = {
+      checkLogin: jest.fn().mockResolvedValue({ action: 'allow' }),
+      verifyCaptcha: jest.fn().mockResolvedValue(true),
+      recordFailedLogin: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: getRepositoryToken(KycSubmission), useValue: kycRepo },
+        { provide: getRepositoryToken(LoginLog), useValue: loginLogRepo },
+        { provide: getRepositoryToken(AdminAction), useValue: adminActionRepo },
         { provide: JwtService, useValue: jwtService },
         { provide: ConfigService, useValue: configService },
         { provide: QueueService, useValue: { emit: jest.fn() } },
+        { provide: NotificationsService, useValue: notificationsService },
+        { provide: OfacSanctionsCheckService, useValue: ofacSanctionsCheck },
+        { provide: TokenBlocklistService, useValue: tokenBlocklistService },
+        { provide: SecurityThreatService, useValue: securityThreat },
       ],
     }).compile();
 
@@ -247,14 +290,6 @@ describe('AuthService', () => {
   });
 
   describe('unlockAccount', () => {
-    let loginLogRepo: { create: jest.Mock; save: jest.Mock };
-
-    beforeEach(() => {
-      loginLogRepo = { create: jest.fn(), save: jest.fn() };
-      // Update the service to use the mock loginLogRepo
-      (service as any).loginLogRepo = loginLogRepo;
-    });
-
     describe('generateUnlockToken', () => {
       it('generates a valid JWT token with account_unlock type', () => {
         const userId = 'user-123';
@@ -501,6 +536,534 @@ describe('AuthService', () => {
 
       await expect(service.refresh('stale-refresh-token')).rejects.toThrow(
         'Token no longer valid',
+      );
+    });
+
+    it('rejects refresh when token type is not refresh', async () => {
+      jwtService.verify = jest.fn().mockReturnValue({ ...basePayload, typ: 'access' });
+      userRepo.findOne.mockResolvedValue(mockUser());
+
+      await expect(service.refresh('access-token')).rejects.toThrow(
+        'Invalid refresh token.',
+      );
+    });
+
+    it('rejects refresh when user does not exist', async () => {
+      userRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.refresh('orphan-token')).rejects.toThrow(
+        'Invalid or expired refresh token.',
+      );
+    });
+
+    it('rejects refresh when jwt verify throws', async () => {
+      jwtService.verify = jest.fn().mockImplementation(() => {
+        throw new Error('jwt malformed');
+      });
+
+      await expect(service.refresh('bad-token')).rejects.toThrow(
+        'Invalid or expired refresh token.',
+      );
+    });
+  });
+
+  describe('verifyEmail', () => {
+    it('verifies email when token is valid', async () => {
+      const user = { ...mockUser(), isEmailVerified: false, emailVerificationToken: 'tok' };
+      userRepo.findOne.mockResolvedValue(user);
+      userRepo.save.mockResolvedValue({ ...user, isEmailVerified: true, emailVerificationToken: null });
+
+      const result = await service.verifyEmail('tok');
+
+      expect(result.message).toBe('Email verified successfully.');
+      expect(user.isEmailVerified).toBe(true);
+      expect(user.emailVerificationToken).toBeNull();
+    });
+
+    it('throws BadRequestException for invalid token', async () => {
+      userRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.verifyEmail('bad-token')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+  });
+
+  describe('login', () => {
+    it('throws UnauthorizedException when user is not found', async () => {
+      userRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.login({ email: 'nope@example.com', password: 'pw' }),
+      ).rejects.toThrow('Invalid credentials.');
+    });
+
+    it('throws UnauthorizedException when account is locked', async () => {
+      const user = {
+        ...mockUser(),
+        isEmailVerified: true,
+        lockoutUntil: new Date(Date.now() + 10 * 60 * 1000),
+      };
+      userRepo.findOne.mockResolvedValue(user);
+
+      await expect(
+        service.login({ email: user.email, password: 'pw' }),
+      ).rejects.toThrow('Account locked');
+    });
+
+    it('throws UnauthorizedException when email is not verified', async () => {
+      const user = { ...mockUser(), isEmailVerified: false };
+      userRepo.findOne.mockResolvedValue(user);
+
+      await expect(
+        service.login({ email: user.email, password: 'pw' }),
+      ).rejects.toThrow('verify your email');
+    });
+
+    it('throws UnauthorizedException for wrong password and increments failed attempts', async () => {
+      const user = {
+        ...mockUser(),
+        isEmailVerified: true,
+        passwordHash: await bcrypt.hash('correctpw', 10),
+        failedLoginAttempts: 0,
+      };
+      userRepo.findOne.mockResolvedValue(user);
+      userRepo.save.mockResolvedValue(user);
+
+      await expect(
+        service.login({ email: user.email, password: 'wrongpw' }),
+      ).rejects.toThrow('Invalid credentials.');
+
+      expect(user.failedLoginAttempts).toBe(1);
+    });
+
+    it('locks the account after 5 failed attempts and sends unlock email', async () => {
+      const user = {
+        ...mockUser(),
+        isEmailVerified: true,
+        passwordHash: await bcrypt.hash('correctpw', 10),
+        failedLoginAttempts: 4,
+      };
+      userRepo.findOne.mockResolvedValue(user);
+      userRepo.save.mockResolvedValue(user);
+
+      await expect(
+        service.login({ email: user.email, password: 'wrongpw' }),
+      ).rejects.toThrow('Account locked for 15 minutes');
+
+      expect(user.lockoutUntil).toBeDefined();
+      expect(user.failedLoginAttempts).toBe(0);
+      expect(notificationsService.sendEmail).toHaveBeenCalled();
+    });
+
+    it('returns tokens on successful login', async () => {
+      const user = {
+        ...mockUser(),
+        isEmailVerified: true,
+        passwordHash: await bcrypt.hash('correctpw', 10),
+      };
+      userRepo.findOne.mockResolvedValue(user);
+      userRepo.save.mockResolvedValue(user);
+
+      const result = await service.login({ email: user.email, password: 'correctpw' });
+
+      expect(result.accessToken).toBe('token');
+      expect(result.refreshToken).toBe('token');
+      expect(user.failedLoginAttempts).toBe(0);
+      expect(user.lockoutUntil).toBeNull();
+    });
+
+    it('blocks login when security threat detects blocked action', async () => {
+      securityThreat.checkLogin.mockResolvedValue({ action: 'blocked' });
+
+      await expect(
+        service.login({ email: 'blocked@example.com', password: 'pw' }),
+      ).rejects.toThrow();
+    });
+
+    it('requires captcha when security threat flags captchaRequired', async () => {
+      securityThreat.checkLogin.mockResolvedValue({ action: 'allow', captchaRequired: true });
+
+      await expect(
+        service.login({ email: 'captcha@example.com', password: 'pw' }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('changePassword', () => {
+    it('updates password and bumps tokenVersion', async () => {
+      const user = {
+        ...mockUser(),
+        passwordHash: await bcrypt.hash('oldpw', 10),
+      };
+      userRepo.findOne.mockResolvedValue(user);
+      userRepo.save.mockResolvedValue(user);
+
+      const result = await service.changePassword('uuid-1', {
+        currentPassword: 'oldpw',
+        newPassword: 'newpassword1',
+      });
+
+      expect(result.message).toContain('Password updated');
+      expect(user.tokenVersion).toBe(1);
+    });
+
+    it('throws BadRequestException when current password is incorrect', async () => {
+      const user = {
+        ...mockUser(),
+        passwordHash: await bcrypt.hash('oldpw', 10),
+      };
+      userRepo.findOne.mockResolvedValue(user);
+
+      await expect(
+        service.changePassword('uuid-1', {
+          currentPassword: 'wrongpw',
+          newPassword: 'newpassword1',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws BadRequestException when new password equals current', async () => {
+      const user = {
+        ...mockUser(),
+        passwordHash: await bcrypt.hash('samepw', 10),
+      };
+      userRepo.findOne.mockResolvedValue(user);
+
+      await expect(
+        service.changePassword('uuid-1', {
+          currentPassword: 'samepw',
+          newPassword: 'samepw',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws NotFoundException when user not found', async () => {
+      userRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.changePassword('nope', {
+          currentPassword: 'a',
+          newPassword: 'b',
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('logout', () => {
+    it('bumps tokenVersion and blocklists token', async () => {
+      const user = mockUser();
+      userRepo.findOne.mockResolvedValue(user);
+      userRepo.save.mockResolvedValue(user);
+      jwtService.decode.mockReturnValue({ exp: Math.floor(Date.now() / 1000) + 100 });
+
+      const result = await service.logout('uuid-1', 'some-token');
+
+      expect(result.message).toBe('Logged out successfully.');
+      expect(user.tokenVersion).toBe(1);
+      expect(tokenBlocklistService.blocklistToken).toHaveBeenCalledWith(
+        'some-token',
+        expect.any(Number),
+      );
+    });
+
+    it('throws NotFoundException when user not found', async () => {
+      userRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.logout('nope', 'token')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('works without a token argument', async () => {
+      const user = mockUser();
+      userRepo.findOne.mockResolvedValue(user);
+      userRepo.save.mockResolvedValue(user);
+
+      const result = await service.logout('uuid-1');
+
+      expect(result.message).toBe('Logged out successfully.');
+    });
+  });
+
+  describe('linkWallet', () => {
+    it('links a wallet address to the user', async () => {
+      const user = mockUser();
+      userRepo.findOne.mockResolvedValue(user);
+      userRepo.save.mockResolvedValue(user);
+
+      const result = await service.linkWallet('uuid-1', 'GDQP2KPQGKIHYJGXNUIYOMHARUARCA7DJT5FO2FFOOKY3B2WSQHG4W37');
+
+      expect(result.walletAddress).toBe('GDQP2KPQGKIHYJGXNUIYOMHARUARCA7DJT5FO2FFOOKY3B2WSQHG4W37');
+    });
+
+    it('throws BadRequestException for sanctioned address', async () => {
+      const user = mockUser();
+      userRepo.findOne.mockResolvedValue(user);
+      ofacSanctionsCheck.isAddressSanctioned.mockResolvedValue(true);
+
+      await expect(
+        service.linkWallet('uuid-1', 'BADADDRESS'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws NotFoundException when user not found', async () => {
+      userRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.linkWallet('nope', 'GDQP2KPQGKIHYJGXNUIYOMHARUARCA7DJT5FO2FFOOKY3B2WSQHG4W37'),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('handleKycWebhook', () => {
+    it('returns updated:false when no user reference in payload', async () => {
+      const result = await service.handleKycWebhook({ foo: 'bar' });
+
+      expect(result.updated).toBe(false);
+    });
+
+    it('returns updated:false when user not found', async () => {
+      userRepo.findOne.mockResolvedValue(null);
+
+      const result = await service.handleKycWebhook({ externalUserId: 'nope' });
+
+      expect(result.updated).toBe(false);
+    });
+
+    it('updates kycStatus to verified and emits notification', async () => {
+      const user = { ...mockUser(), kycStatus: 'pending' };
+      userRepo.findOne.mockResolvedValue(user);
+      userRepo.save.mockResolvedValue({ ...user, kycStatus: 'verified' });
+
+      const result = await service.handleKycWebhook({
+        externalUserId: 'uuid-1',
+        status: 'approved',
+      });
+
+      expect(result.updated).toBe(true);
+      expect(result.kycStatus).toBe('verified');
+    });
+
+    it('returns updated:false when status is same as current', async () => {
+      const user = { ...mockUser(), kycStatus: 'verified' };
+      userRepo.findOne.mockResolvedValue(user);
+
+      const result = await service.handleKycWebhook({
+        externalUserId: 'uuid-1',
+        status: 'approved',
+      });
+
+      expect(result.updated).toBe(false);
+    });
+
+    it('maps rejected status from reviewResult', async () => {
+      const user = { ...mockUser(), kycStatus: 'pending' };
+      userRepo.findOne.mockResolvedValue(user);
+      userRepo.save.mockResolvedValue({ ...user, kycStatus: 'rejected' });
+
+      const result = await service.handleKycWebhook({
+        email: 'farmer@example.com',
+        reviewResult: { reviewAnswer: 'red' },
+      });
+
+      expect(result.updated).toBe(true);
+      expect(result.kycStatus).toBe('rejected');
+    });
+  });
+
+  describe('setupMfa', () => {
+    it('generates secret, backup codes, and QR code', async () => {
+      const user = mockUser();
+      userRepo.findOne.mockResolvedValue(user);
+      userRepo.save.mockResolvedValue(user);
+
+      const result = await service.setupMfa('uuid-1');
+
+      expect(result.secret).toBeDefined();
+      expect(result.backupCodes).toHaveLength(8);
+      expect(result.qrCodeUrl).toBeDefined();
+      expect(user.mfaSecret).toBe(result.secret);
+      expect(user.mfaBackupCodes).toHaveLength(8);
+    });
+
+    it('throws NotFoundException when user not found', async () => {
+      userRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.setupMfa('nope')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('enableMfa', () => {
+    it('throws BadRequestException when no mfa secret is set', async () => {
+      const user = { ...mockUser(), mfaSecret: null };
+      userRepo.findOne.mockResolvedValue(user);
+
+      await expect(service.enableMfa('uuid-1', '123456')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+  });
+
+  describe('disableMfa', () => {
+    it('throws BadRequestException when MFA is not enabled', async () => {
+      const user = { ...mockUser(), isMfaEnabled: false };
+      userRepo.findOne.mockResolvedValue(user);
+
+      await expect(
+        service.disableMfa('uuid-1', 'token', 'password'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws BadRequestException for invalid password', async () => {
+      const user = {
+        ...mockUser(),
+        isMfaEnabled: true,
+        mfaSecret: 'secret',
+        passwordHash: await bcrypt.hash('correctpw', 10),
+      };
+      userRepo.findOne.mockResolvedValue(user);
+
+      await expect(
+        service.disableMfa('uuid-1', '123456', 'wrongpw'),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('verifyMfa', () => {
+    it('throws BadRequestException when MFA not enabled', async () => {
+      const user = { ...mockUser(), isMfaEnabled: false, mfaSecret: null };
+      userRepo.findOne.mockResolvedValue(user);
+
+      await expect(service.verifyMfa('uuid-1', '123456')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('throws ForbiddenException when MFA is locked out', async () => {
+      const user = {
+        ...mockUser(),
+        isMfaEnabled: true,
+        mfaSecret: 'secret',
+        mfaLockedUntil: new Date(Date.now() + 5 * 60 * 1000),
+      };
+      userRepo.findOne.mockResolvedValue(user);
+
+      await expect(service.verifyMfa('uuid-1', '123456')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('accepts a valid backup code and removes it (single-use)', async () => {
+      const backupCode = 'ABCD1234';
+      const hashedCode = await bcrypt.hash(backupCode, 10);
+      const user = {
+        ...mockUser(),
+        isMfaEnabled: true,
+        mfaSecret: 'secret',
+        mfaBackupCodes: [hashedCode, await bcrypt.hash('EEEE5678', 10)],
+      };
+      userRepo.findOne.mockResolvedValue(user);
+      userRepo.save.mockResolvedValue(user);
+
+      const result = await service.verifyMfa('uuid-1', backupCode);
+
+      expect(result.valid).toBe(true);
+      expect(user.mfaBackupCodes).toHaveLength(1);
+    });
+
+    it('increments failed attempts and locks after max attempts', async () => {
+      const user = {
+        ...mockUser(),
+        isMfaEnabled: true,
+        mfaSecret: 'secret',
+        mfaBackupCodes: null,
+        mfaFailedAttempts: 4,
+      };
+      userRepo.findOne.mockResolvedValue(user);
+      userRepo.save.mockResolvedValue(user);
+
+      await expect(service.verifyMfa('uuid-1', 'wrongcode')).rejects.toThrow(
+        BadRequestException,
+      );
+
+      expect(user.mfaLockedUntil).toBeDefined();
+      expect(user.mfaFailedAttempts).toBe(0);
+    });
+
+    it('throws NotFoundException when user not found', async () => {
+      userRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.verifyMfa('nope', '123456')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('updateUserRole', () => {
+    it('updates role and bumps tokenVersion', async () => {
+      const user = mockUser();
+      userRepo.findOne.mockResolvedValue(user);
+      userRepo.save.mockResolvedValue({ ...user, role: 'trader', tokenVersion: 1 });
+
+      const result = await service.updateUserRole('uuid-1', 'trader');
+
+      expect(result.role).toBe('trader');
+      expect(user.tokenVersion).toBe(1);
+    });
+
+    it('records admin action when adminId provided', async () => {
+      const user = mockUser();
+      userRepo.findOne.mockResolvedValue(user);
+      userRepo.save.mockResolvedValue(user);
+
+      await service.updateUserRole('uuid-1', 'trader', 'admin-id', 'reason');
+
+      expect(adminActionRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          adminId: 'admin-id',
+          action: 'update_user_role',
+        }),
+      );
+    });
+
+    it('throws NotFoundException when user not found', async () => {
+      userRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.updateUserRole('nope', 'trader')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('generateSep10Challenge', () => {
+    it('throws BadRequestException for invalid public key', async () => {
+      await expect(
+        service.generateSep10Challenge('invalid-key'),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('validateSep10Response', () => {
+    it('throws UnauthorizedException for invalid XDR', async () => {
+      await expect(
+        service.validateSep10Response('invalid-xdr'),
+      ).rejects.toThrow('Invalid SEP-10 response XDR');
+    });
+  });
+
+  describe('revokeSession', () => {
+    it('throws BadRequestException for invalid revoke token', async () => {
+      // findUserByRevokeToken returns null via loginLogRepo query builder mock
+      const qb: any = {
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+      };
+      (loginLogRepo as any).createQueryBuilder = jest.fn().mockReturnValue(qb);
+
+      await expect(service.revokeSession('bad-token')).rejects.toThrow(
+        BadRequestException,
       );
     });
   });

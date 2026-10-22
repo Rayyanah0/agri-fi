@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
@@ -7,8 +7,12 @@ import { AuthController } from './auth.controller';
 import { AdminController } from './admin.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
+import { GoogleStrategy } from './google.strategy';
 import { User } from './entities/user.entity';
 import { KycSubmission } from './entities/kyc-submission.entity';
+import { BiometricCredential } from './entities/biometric-credential.entity';
+import { BiometricController } from './biometric.controller';
+import { BiometricService } from './biometric.service';
 import { KycGuard, RolesGuard } from '../common/guards';
 import { QueueModule } from '../queue/queue.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -27,8 +31,10 @@ import { MfaGuard } from '../common/guards';
 import { EscrowModule } from '../escrow/escrow.module';
 import { SettlementModule } from '../settlement/settlement.module';
 import { DocumentsModule } from '../documents/documents.module';
-import { AuditModule } from '../audit/audit.module';
 import { EmailSequenceModule } from '../email-sequence/email-sequence.module';
+import { KycRulesModule } from '../kyc-rules/kyc-rules.module';
+import { BehavioralProfile } from '../database/entities/behavioral-profile.entity';
+import { BehavioralRiskService } from './behavioral-risk.service';
 
 @Module({
   imports: [
@@ -40,6 +46,8 @@ import { EmailSequenceModule } from '../email-sequence/email-sequence.module';
       LoginLog,
       AdminAction,
       SecurityIpBlock,
+      BehavioralProfile,
+      BiometricCredential,
     ]),
     ConfigModule,
     QueueModule,
@@ -50,6 +58,7 @@ import { EmailSequenceModule } from '../email-sequence/email-sequence.module';
     EmailSequenceModule,
     SettlementModule,
     DocumentsModule,
+    forwardRef(() => KycRulesModule),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -59,65 +68,10 @@ import { EmailSequenceModule } from '../email-sequence/email-sequence.module';
       }),
     }),
   ],
-  controllers: [AuthController, AdminController],
+  controllers: [AuthController, AdminController, BiometricController],
   providers: [
     AuthService,
-    JwtStrategy,
-    KycGuard,
-    RolesGuard,
-    MfaGuard,
-    RedisConfig,
-    TokenBlocklistService,
-    SecurityThreatService,
-    OfacSanctionsCheckService,
-    KycCronService,
-  ],
-  exports: [
-    AuthService,
-    JwtModule,
-    TypeOrmModule,
-    KycGuard,
-    RolesGuard,
-    MfaGuard,
-    RedisConfig,
-    TokenBlocklistService,
-    SecurityThreatService,
-    OfacSanctionsCheckService,
-  ],
-})
-export class AuthModule {}
-
-@Module({
-  imports: [
-    TypeOrmModule.forFeature([
-      User,
-      KycSubmission,
-      TradeDeal,
-      Document,
-      LoginLog,
-      AdminAction,
-      SecurityIpBlock,
-    ]),
-    QueueModule,
-    NotificationsModule,
-    PassportModule,
-    EscrowModule,
-    EmailSequenceModule,
-    AuditModule,
-    SettlementModule,
-    DocumentsModule,
-    JwtModule.registerAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        secret: config.getOrThrow<string>('JWT_SECRET'),
-        signOptions: { expiresIn: config.get<string>('JWT_EXPIRES_IN', '7d') },
-      }),
-    }),
-  ],
-  controllers: [AuthController, AdminController],
-  providers: [
-    AuthService,
+    BiometricService,
     JwtStrategy,
     GoogleStrategy,
     KycGuard,
@@ -128,9 +82,11 @@ export class AuthModule {}
     SecurityThreatService,
     OfacSanctionsCheckService,
     KycCronService,
+    BehavioralRiskService,
   ],
   exports: [
     AuthService,
+    BiometricService,
     JwtModule,
     TypeOrmModule,
     KycGuard,
@@ -140,6 +96,7 @@ export class AuthModule {}
     TokenBlocklistService,
     SecurityThreatService,
     OfacSanctionsCheckService,
+    BehavioralRiskService,
   ],
 })
 export class AuthModule {}

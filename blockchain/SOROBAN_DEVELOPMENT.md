@@ -946,9 +946,44 @@ For issues or questions:
 - `update_arbitrator(admin, new_arbitrator)` — admin can rotate the arbitrator address
 - Dispute flag blocks milestone payouts until arbitrator resolves; payout routing follows arbitrator decision
 - New error variants: `DisputeActive` (15) and `NoDispute`
+- Superseded by Issue #1004 below: the boolean dispute flag became a full
+  dispute record, and `resolve_dispute` no longer takes an `approve` argument.
+
+### 2026-10-19 — On-Chain Dispute Resolution Module
+
+#### Issue #1004 — Arbitrator Voting Window
+- `Dispute(milestone_index)` stays the legacy "milestone is frozen" boolean, so
+  instances deployed before #1004 keep working. The full state machine lives in
+  the new `DisputeRecord(milestone_index)` entry.
+- `Dispute` record: `milestone_index`, `raised_by`, `opened_at`,
+  `voting_deadline`, `phase` (`Open` → `Arbitration` → `Verdict` → `Resolved`),
+  `release_votes`, `refund_votes`, `voters`, `evidence`, `verdict`.
+- `raise_dispute(caller, milestone_index)` — admin, farmer **or any staked
+  investor** can open a dispute; the voting deadline is pinned at open time.
+- `submit_dispute_evidence(caller, milestone_index, uri)` — parties only, up to
+  `MAX_DISPUTE_EVIDENCE` (32) entries per dispute, rejected once decided.
+- `cast_dispute_vote(voter, milestone_index, release)` — pool members only,
+  one vote each, inside the window (deadline is inclusive); a majority
+  immediately records the verdict.
+- `finalize_dispute(caller, milestone_index)` /
+  `resolve_dispute(caller, milestone_index) -> DisputeOutcome` — `resolve`
+  executes the verdict (release pays the tranche, refund converts the escrow to
+  investor refunds) and is replay-idempotent.
+- `get/set_dispute_voting_window`, `get/set_arbitrator_pool`,
+  `get_dispute`, `get_dispute_phase`, `get_dispute_voting_deadline` views.
+- Events: `dispute_raised`, `dispute_evidence`, `dispute_vote`,
+  `dispute_verdict`, `dispute_resolved`, `arbitrator_pool_set` — each carries
+  the milestone index in `topic[1]` (see `shared/events.json`).
+- New errors: `VotingWindowClosed` (19), `VotingNotOver` (20),
+  `AlreadyVoted` (21), `NotAnArbitrator` (22), `EvidenceLimitReached` (23),
+  `EmptyArbitratorPool` (24), `DisputeDecided` (25), `InvalidEvidence` (26).
+- Backend: the Soroban event listener indexes these events into
+  `contract_disputes`, and `POST/GET /v1/soroban/campaign/:contractId/dispute*`
+  exposes raising, evidence, resolve, on-chain status and the arbitration
+  configuration.
 
 ---
 
 **Status**: Development environment integration complete (Issue #346)  
-**Last Updated**: 2026-08-29  
+**Last Updated**: 2026-10-19  
 **Maintainer**: Blockchain Team

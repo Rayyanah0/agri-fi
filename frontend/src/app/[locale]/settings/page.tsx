@@ -9,9 +9,17 @@ import { apiClient, User } from "@/lib/api";
 import DashboardLayout from "@/components/DashboardLayout";
 import { resetTour, isTourCompletedStatic } from "@/components/DashboardTour";
 import BrowserPushNotificationsCard from "@/components/BrowserPushNotificationsCard";
+import { ThemeSettingsPanel } from "@/components/theme/ThemeSettingsPanel";
 import { FormField } from "@/components/ui/FormField";
 
-type Tab = "account" | "verification" | "wallets" | "currency" | "notifications" | "security";
+type Tab =
+  | "account"
+  | "verification"
+  | "wallets"
+  | "currency"
+  | "notifications"
+  | "security"
+  | "appearance";
 
 interface MfaSetup {
   secret: string;
@@ -439,6 +447,7 @@ export default function SettingsPage() {
     { id: "wallets", label: "Wallets", icon: "🔑" },
     { id: "currency", label: "Currency", icon: "💱" },
     { id: "notifications", label: "Notifications", icon: "🔔" },
+    { id: "appearance", label: "Appearance", icon: "🎨" },
   ];
 
   return (
@@ -1018,6 +1027,13 @@ export default function SettingsPage() {
                 {notifMsg}
               </p>
             )}
+          </div>
+        )}
+
+        {/* ── Appearance tab (#1170 theme system) ── */}
+        {tab === "appearance" && (
+          <div className="card p-6">
+            <ThemeSettingsPanel />
           </div>
         )}
       </div>

@@ -719,4 +719,23 @@ export class InvestmentsService {
 
     return toPaginatedResult(data, total, page, limit);
   }
+
+  /**
+   * Returns the investor's active (non-terminal) investments together with
+   * their trade deal relations. Used by the stress-testing simulation to
+   * build a portfolio exposure snapshot (commodity, region, amount).
+   */
+  async getActiveHoldingsForInvestor(
+    investorId: string,
+  ): Promise<Investment[]> {
+    return this.investmentRepo.find({
+      where: [
+        { investorId, status: InvestmentStatus.PENDING },
+        { investorId, status: InvestmentStatus.CONFIRMED },
+        { investorId, status: InvestmentStatus.RELEASING },
+      ],
+      relations: ['tradeDeal'],
+      order: { createdAt: 'DESC' },
+    });
+  }
 }

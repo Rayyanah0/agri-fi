@@ -10,7 +10,7 @@ import { SorobanEventIndexer } from './soroban-event-indexer.service';
 import {
   TransactionLog,
   TxStatus,
-} from '../stellar/entities/transaction-log.entity';
+} from '../database/entities/transaction-log.entity';
 import { ShipmentMilestone } from '../shipments/entities/shipment-milestone.entity';
 import { TradeDeal } from '../trade-deals/entities/trade-deal.entity';
 import { QueueService } from '../queue/queue.service';
@@ -244,6 +244,8 @@ describe('SorobanEventIndexer', () => {
       };
       const txHash = 'tx789ghi';
 
+      dealRepo.findOne.mockResolvedValue({ id: 'deal-001', status: 'funded' });
+
       await handleMethod.call(service, data, txHash);
 
       expect(dealRepo.update).toHaveBeenCalledWith(
@@ -256,6 +258,46 @@ describe('SorobanEventIndexer', () => {
         expect.objectContaining({
           dealId: 'deal-001',
           status: 'funded',
+          txHash,
+        }),
+      );
+
+      // No discrepancy alert should be fired when DB matches chain
+      expect(queueService.emit).not.toHaveBeenCalledWith(
+        'deal.status.discrepancy',
+        expect.anything(),
+      );
+    });
+
+    it('should fire discrepancy alert when DB status differs from on-chain status after sync', async () => {
+      const handleMethod = (service as any).handleCampaignStatusChanged;
+      const data = {
+        dealId: 'deal-001',
+        newStatus: 'funded',
+      };
+      const txHash = 'tx-discrepancy';
+
+      // DB still shows 'open' after update (e.g. concurrent modification)
+      dealRepo.findOne.mockResolvedValue({ id: 'deal-001', status: 'open' });
+
+      await handleMethod.call(service, data, txHash);
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          dealId: 'deal-001',
+          onChainStatus: 'funded',
+          dbStatus: 'open',
+          txHash,
+        }),
+        expect.stringContaining('Discrepancy detected'),
+      );
+
+      expect(queueService.emit).toHaveBeenCalledWith(
+        'deal.status.discrepancy',
+        expect.objectContaining({
+          dealId: 'deal-001',
+          onChainStatus: 'funded',
+          dbStatus: 'open',
           txHash,
         }),
       );
@@ -315,6 +357,114 @@ describe('SorobanEventIndexer', () => {
       ).resolves.not.toThrow();
 
       expect(logger.error).toHaveBeenCalled();
+    });
+  });
+
+  describe('Integration: full indexer -> DB flow for campaign_status_changed', () => {
+    it('should process a status_changed event end-to-end: normalize -> dispatch -> upsert deal status', async () => {
+      // Simulate a raw contract event arriving from Soroban RPC
+      const rawEvent = {
+        id: 'evt-status-001',
+        transactionHash: 'tx-status-001',
+        ledger: 2000,
+        contractId:
+          'C1111111111111111111111111111111111111111111111111111111111',
+        type: 'campaign_status_changed',
+        topic: ['farm_campaign.status_changed'],
+        value: { dealId: 'deal-int-001', newStatus: 'funded' },
+      };
+
+      dealRepo.update.mockResolvedValue({ affected: 1 });
+      dealRepo.findOne.mockResolvedValue({
+        id: 'deal-int-001',
+        status: 'funded',
+      });
+
+      const processMethod = (service as any).processEvent;
+      await processMethod.call(service, rawEvent);
+
+      // Deal status should be upserted in the database
+      expect(dealRepo.update).toHaveBeenCalledWith(
+        { id: 'deal-int-001' },
+        { status: 'funded' },
+      );
+
+      // Re-read happened for discrepancy verification
+      expect(dealRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'deal-int-001' },
+      });
+
+      // Queue event emitted for downstream processing
+      expect(queueService.emit).toHaveBeenCalledWith(
+        'deal.status.changed',
+        expect.objectContaining({
+          dealId: 'deal-int-001',
+          status: 'funded',
+          txHash: 'tx-status-001',
+        }),
+      );
+    });
+
+    it('should be idempotent: replaying the same event does not duplicate updates', async () => {
+      const rawEvent = {
+        id: 'evt-status-002',
+        transactionHash: 'tx-status-002',
+        ledger: 2010,
+        contractId:
+          'C1111111111111111111111111111111111111111111111111111111111',
+        type: 'campaign_status_changed',
+        topic: ['farm_campaign.status_changed'],
+        value: { dealId: 'deal-int-002', newStatus: 'completed' },
+      };
+
+      dealRepo.update.mockResolvedValue({ affected: 1 });
+      dealRepo.findOne.mockResolvedValue({
+        id: 'deal-int-002',
+        status: 'completed',
+      });
+
+      const processMethod = (service as any).processEvent;
+
+      // Process the same event twice
+      await processMethod.call(service, rawEvent);
+      await processMethod.call(service, rawEvent);
+
+      // dealRepo.update should only be called once (cache prevents duplicate)
+      expect(dealRepo.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('should fire discrepancy alert when DB and chain state differ after sync', async () => {
+      const rawEvent = {
+        id: 'evt-status-003',
+        transactionHash: 'tx-status-003',
+        ledger: 2020,
+        contractId:
+          'C1111111111111111111111111111111111111111111111111111111111',
+        type: 'campaign_status_changed',
+        topic: ['farm_campaign.status_changed'],
+        value: { dealId: 'deal-int-003', newStatus: 'funded' },
+      };
+
+      dealRepo.update.mockResolvedValue({ affected: 1 });
+      // DB still shows 'open' after the update (e.g. concurrent modification)
+      dealRepo.findOne.mockResolvedValue({
+        id: 'deal-int-003',
+        status: 'open',
+      });
+
+      const processMethod = (service as any).processEvent;
+      await processMethod.call(service, rawEvent);
+
+      // Discrepancy alert emitted
+      expect(queueService.emit).toHaveBeenCalledWith(
+        'deal.status.discrepancy',
+        expect.objectContaining({
+          dealId: 'deal-int-003',
+          onChainStatus: 'funded',
+          dbStatus: 'open',
+          txHash: 'tx-status-003',
+        }),
+      );
     });
   });
 });

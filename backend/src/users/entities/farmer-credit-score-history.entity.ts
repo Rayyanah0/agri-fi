@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
 } from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
+import type { PersistedScoreFactors } from '../credit-score.model';
 
 @Entity('farmer_credit_score_history')
 export class FarmerCreditScoreHistory {
@@ -42,16 +43,16 @@ export class FarmerCreditScoreHistory {
       dealCompletionRate: 1.0,
       dealDefaultRate: 0.0,
       shipmentMilestoneComplianceRate: 0.92,
+      shipmentAccuracyRate: 0.9,
+      documentQualityRate: 0.9,
       kycVerificationAgeDays: 180,
     },
   })
-  factors: {
-    onTimeRepaymentRate: number;
-    dealCompletionRate: number;
-    dealDefaultRate: number;
-    shipmentMilestoneComplianceRate: number;
-    kycVerificationAgeDays: number;
-  };
+  /**
+   * Rows written before #1160 predate the shipment-accuracy and
+   * document-quality dimensions, so every key is optional on read.
+   */
+  factors: PersistedScoreFactors;
 
   @Column({ type: 'varchar', length: 255 })
   @ApiProperty({ description: 'Triggering event or recalculation reason' })

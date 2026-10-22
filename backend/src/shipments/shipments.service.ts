@@ -11,7 +11,17 @@ import {
   ShipmentMilestone,
   MilestoneType,
 } from './entities/shipment-milestone.entity';
+import { MilestoneComment } from './entities/milestone-comment.entity';
+import { MilestoneVerification } from './entities/milestone-verification.entity';
 import { CreateMilestoneDto } from './dto/create-milestone.dto';
+import {
+  CreateMilestoneCommentDto,
+  MilestoneCommentResponseDto,
+} from './dto/milestone-comment.dto';
+import {
+  CreateMilestoneVerificationDto,
+  MilestoneVerificationResponseDto,
+} from './dto/milestone-verification.dto';
 import { StellarService } from '../stellar/stellar.service';
 import { QueueService } from '../queue/queue.service';
 import { ConfigService } from '@nestjs/config';
@@ -31,6 +41,10 @@ export class ShipmentsService {
     private readonly logger: PinoLogger,
     @InjectRepository(ShipmentMilestone)
     private readonly milestoneRepo: Repository<ShipmentMilestone>,
+    @InjectRepository(MilestoneComment)
+    private readonly commentRepo: Repository<MilestoneComment>,
+    @InjectRepository(MilestoneVerification)
+    private readonly verificationRepo: Repository<MilestoneVerification>,
     @InjectRepository(TradeDeal)
     private readonly tradeDealRepo: Repository<TradeDeal>,
     private readonly stellarService: StellarService,
@@ -162,5 +176,143 @@ export class ShipmentsService {
       where: { tradeDealId },
       order: { recordedAt: 'ASC' },
     });
+  }
+
+  async addComment(
+    userId: string,
+    userDisplayName: string,
+    dto: CreateMilestoneCommentDto,
+  ): Promise<MilestoneCommentResponseDto> {
+    const milestone = await this.milestoneRepo.findOne({
+      where: { id: dto.milestoneId },
+    });
+
+    if (!milestone) {
+      throw new NotFoundException('Milestone not found');
+    }
+
+    const comment = this.commentRepo.create({
+      milestoneId: dto.milestoneId,
+      userId,
+      userDisplayName,
+      content: dto.content,
+      role: dto.role || null,
+    });
+
+    const saved = await this.commentRepo.save(comment);
+
+    return {
+      id: saved.id,
+      milestoneId: saved.milestoneId,
+      userId: saved.userId,
+      userDisplayName: saved.userDisplayName,
+      content: saved.content,
+      role: saved.role,
+      createdAt: saved.createdAt,
+      updatedAt: saved.updatedAt,
+    };
+  }
+
+  async getComments(
+    milestoneId: string,
+  ): Promise<MilestoneCommentResponseDto[]> {
+    const comments = await this.commentRepo.find({
+      where: { milestoneId },
+      order: { createdAt: 'ASC' },
+    });
+
+    return comments.map((c) => ({
+      id: c.id,
+      milestoneId: c.milestoneId,
+      userId: c.userId,
+      userDisplayName: c.userDisplayName,
+      content: c.content,
+      role: c.role,
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+    }));
+  }
+
+  async verifyMilestone(
+    userId: string,
+    verifierRole: string,
+    dto: CreateMilestoneVerificationDto,
+  ): Promise<MilestoneVerificationResponseDto> {
+    const milestone = await this.milestoneRepo.findOne({
+      where: { id: dto.milestoneId },
+    });
+
+    if (!milestone) {
+      throw new NotFoundException('Milestone not found');
+    }
+
+    // Check if already verified by this user
+    const existing = await this.verificationRepo.findOne({
+      where: { milestoneId: dto.milestoneId, verifiedBy: userId },
+    });
+
+    if (existing) {
+      throw new UnprocessableEntityException(
+        'User has already verified this milestone',
+      );
+    }
+
+    const verification = this.verificationRepo.create({
+      milestoneId: dto.milestoneId,
+      verifiedBy: userId,
+      verifierRole,
+      status: dto.status,
+      notes: dto.notes || null,
+    });
+
+    const saved = await this.verificationRepo.save(verification);
+
+    return {
+      id: saved.id,
+      milestoneId: saved.milestoneId,
+      verifiedBy: saved.verifiedBy,
+      verifierRole: saved.verifierRole,
+      status: saved.status,
+      notes: saved.notes,
+      verifiedAt: saved.verifiedAt,
+    };
+  }
+
+  async getVerifications(
+    milestoneId: string,
+  ): Promise<MilestoneVerificationResponseDto[]> {
+    const verifications = await this.verificationRepo.find({
+      where: { milestoneId },
+      order: { verifiedAt: 'ASC' },
+    });
+
+    return verifications.map((v) => ({
+      id: v.id,
+      milestoneId: v.milestoneId,
+      verifiedBy: v.verifiedBy,
+      verifierRole: v.verifierRole,
+      status: v.status,
+      notes: v.notes,
+      verifiedAt: v.verifiedAt,
+    }));
+  }
+
+  async getMilestoneHistory(tradeDealId: string): Promise<any> {
+    const milestones = await this.findByDeal(tradeDealId);
+
+    const history = await Promise.all(
+      milestones.map(async (m) => {
+        const comments = await this.getComments(m.id);
+        const verifications = await this.getVerifications(m.id);
+
+        return {
+          milestone: m,
+          comments,
+          verifications,
+        };
+      }),
+    );
+
+    return history;
   }
 }

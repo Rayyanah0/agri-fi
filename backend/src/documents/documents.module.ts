@@ -3,7 +3,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { DocumentsController } from './documents.controller';
+import { DocumentClassificationController } from './document-classification.controller';
 import { DocumentsService } from './documents.service';
+import { DocumentClassificationService } from './document-classification.service';
 import { SignatureRequestService } from './signature-request.service';
 import { WatermarkService } from './watermark.service';
 import { ClamScanService } from './clam-scan.service';
@@ -31,9 +33,10 @@ import { SIGNING_JWT_MODULE } from './documents.constants';
     SettlementModule,
     AuditModule,
   ],
-  controllers: [DocumentsController],
+  controllers: [DocumentsController, DocumentClassificationController],
   providers: [
     DocumentsService,
+    DocumentClassificationService,
     ClamScanService,
     WatermarkService,
     SignatureRequestService,

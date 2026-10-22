@@ -1,7 +1,7 @@
 import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { AppController, PublicController } from './app.controller';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { LoggerModule } from 'nestjs-pino';
 import { ClsModule, ClsMiddleware } from 'nestjs-cls';
@@ -25,7 +25,12 @@ import { HttpLoggerMiddleware } from './common/middleware/http-logger.middleware
 import { loggingConfig } from './common/logging/logging.config';
 import { HealthModule } from './health/health.module';
 import { TerminusModule } from '@nestjs/terminus';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { UserThrottlerGuard } from './rate-limit/user-throttler.guard';
+import {
+  buildThrottlerOptions,
+  readRateLimitSettings,
+} from './rate-limit/rate-limit.config';
 import { SorobanModule } from './soroban/soroban.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { ReferralsModule } from './referrals/referrals.module';
@@ -34,6 +39,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { APP_FILTER } from '@nestjs/core';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { AuditModule } from './audit/audit.module';
+import { AuditRetentionModule } from './audit/audit-retention.module';
 import { GraphQLApiModule } from './graphql/graphql.module';
 import { TradeDeal } from './trade-deals/entities/trade-deal.entity';
 import { Investment } from './investments/entities/investment.entity';
@@ -44,7 +50,12 @@ import { SettlementModule } from './settlement/settlement.module';
 import { SearchModule } from './search/search.module';
 import { UpgradeModule } from './upgrade/upgrade.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { SecretsModule } from './secrets/secrets.module';
+import { PublicApiModule } from './public-api/public-api.module';
+import { SelfHealingModule } from './self-healing/self-healing.module';
+import { KycRulesModule } from './kyc-rules/kyc-rules.module';
 import { AccreditationModule } from './accreditation/accreditation.module';
+import { ZkpModule } from './zkp/zkp.module';
 
 @Module({
   controllers: [AppController, PublicController],
@@ -54,33 +65,12 @@ import { AccreditationModule } from './accreditation/accreditation.module';
     ClsModule.forRoot({ global: true }),
     ScheduleModule.forRoot(),
     TypeOrmModule.forFeature([TradeDeal, Investment]),
-    ThrottlerModule.forRoot([
-      {
-        name: 'default',
-        ttl: parseInt(process.env.RATE_LIMIT_TTL || '60000'),
-        limit: parseInt(process.env.RATE_LIMIT_GLOBAL || '100'),
-      },
-      {
-        name: 'login',
-        ttl: 60000,
-        limit: 5,
-      },
-      {
-        name: 'kyc',
-        ttl: 60000,
-        limit: 3,
-      },
-      {
-        name: 'marketplace',
-        ttl: 60000,
-        limit: 60,
-      },
-      {
-        name: 'public-market',
-        ttl: 60000,
-        limit: 120,
-      },
-    ]),
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =>
+        buildThrottlerOptions(readRateLimitSettings(config)),
+    }),
     LoggerModule.forRoot(loggingConfig),
     ConfigModule.forRoot({
       isGlobal: true,
@@ -89,7 +79,9 @@ import { AccreditationModule } from './accreditation/accreditation.module';
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
-      useClass: DatabaseConfig,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =>
+        new DatabaseConfig(config).createTypeOrmOptions(),
     }),
     DatabaseModule,
     AuthModule,
@@ -110,6 +102,7 @@ import { AccreditationModule } from './accreditation/accreditation.module';
     SorobanModule,
     MetricsModule,
     AuditModule,
+    AuditRetentionModule,
     AchievementModule,
     GraphQLApiModule,
     EmailSequenceModule,
@@ -117,7 +110,13 @@ import { AccreditationModule } from './accreditation/accreditation.module';
     SearchModule,
     UpgradeModule,
     WebhooksModule,
+    SecretsModule,
+    PublicApiModule,
+    SelfHealingModule,
+    ReferralsModule,
+    KycRulesModule,
     AccreditationModule,
+    ZkpModule,
   ],
   providers: [
     {
@@ -126,16 +125,23 @@ import { AccreditationModule } from './accreditation/accreditation.module';
     },
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: UserThrottlerGuard,
     },
   ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     // HttpLoggerMiddleware runs first so its timer covers the full request lifecycle.
-    // ClsMiddleware MUST run before CorrelationIdMiddleware so it can safely call cls.set()
+    // ClsMiddleware MUST run before CorrelationIdMiddleware so it can safely call cls.set().
+    // TracingMiddleware extracts the W3C trace context and starts the server span,
+    // so CorrelationIdMiddleware can adopt the OpenTelemetry trace id (#1233).
     consumer
-      .apply(HttpLoggerMiddleware, ClsMiddleware, CorrelationIdMiddleware)
+      .apply(
+        HttpLoggerMiddleware,
+        ClsMiddleware,
+        TracingMiddleware,
+        CorrelationIdMiddleware,
+      )
       .forRoutes('{*splat}');
   }
 }

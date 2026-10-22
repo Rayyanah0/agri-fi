@@ -22,7 +22,9 @@ members = [
     "contracts/farm_campaign",
     "contracts/farm_campaign_settlement",
     "contracts/marketplace_settlement",
+    "contracts/price-feed",
     "contracts/project_factory",
+    "contracts/reputation",
     "contracts/revenue_distributor",
 ]
 resolver = "2"

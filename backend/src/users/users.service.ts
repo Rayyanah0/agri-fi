@@ -12,6 +12,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { User, UserRole } from '../auth/entities/user.entity';
 import { UpdateOnboardingProgressDto } from './dto/update-onboarding-progress.dto';
+import { UpdateUserPreferencesDto } from './dto/update-user-preferences.dto';
 import { TradeDeal } from '../trade-deals/entities/trade-deal.entity';
 import { Investment } from '../investments/entities/investment.entity';
 import { ShipmentMilestone } from '../shipments/entities/shipment-milestone.entity';
@@ -19,6 +20,7 @@ import { PaymentDistribution } from '../escrow/entities/payment-distribution.ent
 import { KycSubmission } from '../auth/entities/kyc-submission.entity';
 import { Document } from '../trade-deals/entities/document.entity';
 import { AuditLog } from '../database/entities/audit-log.entity';
+import { creditTierForScore, CreditScoreTier } from './credit-score.model';
 
 export interface CurrentUserProfile {
   id: string;
@@ -31,6 +33,8 @@ export interface CurrentUserProfile {
   companyDetails: User['companyDetails'];
   country: string;
   createdAt: Date;
+  /** Persisted appearance preferences (#1170) — synced across devices. */
+  themePreferences: User['themePreferences'];
 }
 
 export interface PublicUserProfile {
@@ -40,6 +44,8 @@ export interface PublicUserProfile {
   kycStatus: User['kycStatus'];
   walletAddress: string | null; // truncated
   creditScore: number | null;
+  /** Credit tier derived from `creditScore`; null when unscored. */
+  creditTier: CreditScoreTier | null;
   createdAt: Date;
   // computed
   dealsCompleted: number;
@@ -118,7 +124,43 @@ export class UsersService {
       companyDetails: user.companyDetails,
       country: user.country,
       createdAt: user.createdAt,
+      themePreferences: user.themePreferences ?? null,
     };
+  }
+
+  /**
+   * Updates the caller's profile preferences.
+   *
+   * Currently supports the appearance preferences introduced by #1170, which
+   * are synchronised across devices. The payload is validated by the DTO, so
+   * only allow-listed values are persisted.
+   */
+  async updatePreferences(
+    userId: string,
+    preferences: UpdateUserPreferencesDto,
+  ): Promise<CurrentUserProfile> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new NotFoundException('User not found.');
+    }
+
+    if (preferences.themePreferences) {
+      user.themePreferences = {
+        ...preferences.themePreferences,
+        updatedAt:
+          preferences.themePreferences.updatedAt ?? new Date().toISOString(),
+      };
+    }
+
+    if (preferences.preferredCurrency) {
+      (user as User & { preferredCurrency?: string }).preferredCurrency =
+        preferences.preferredCurrency;
+    }
+
+    await this.userRepository.save(user);
+
+    return this.getProfile(userId);
   }
 
   /**
@@ -214,6 +256,10 @@ export class UsersService {
       kycStatus: user.kycStatus,
       walletAddress: truncatedWallet,
       creditScore: user.creditScore,
+      creditTier:
+        user.creditScore === null || user.creditScore === undefined
+          ? null
+          : creditTierForScore(user.creditScore),
       createdAt: user.createdAt,
       dealsCompleted,
       activeDeals,

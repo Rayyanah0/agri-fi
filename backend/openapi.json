@@ -558,6 +558,215 @@
           "200": { "description": "Live bids and asks" }
         }
       }
+    },
+    "/v1/admin/self-healing/status": {
+      "get": {
+        "operationId": "SelfHealingController_getStatus",
+        "summary": "Get the status of the self-healing automation",
+        "tags": ["admin/self-healing"],
+        "security": [{ "jwt": [] }],
+        "responses": {
+          "200": { "description": "Automation status" }
+        }
+      }
+    },
+    "/v1/admin/self-healing/issues": {
+      "get": {
+        "operationId": "SelfHealingController_getIssues",
+        "summary": "List the detected self-healing issues",
+        "tags": ["admin/self-healing"],
+        "security": [{ "jwt": [] }],
+        "parameters": [
+          { "name": "status", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "issueType", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "required": false, "schema": { "type": "number" } },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "number" } }
+        ],
+        "responses": {
+          "200": { "description": "Detected issues" }
+        }
+      }
+    },
+    "/v1/admin/self-healing/issues/{id}": {
+      "get": {
+        "operationId": "SelfHealingController_getIssue",
+        "summary": "Get a single detected issue",
+        "tags": ["admin/self-healing"],
+        "security": [{ "jwt": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Issue detail" },
+          "404": { "description": "Issue not found" }
+        }
+      }
+    },
+    "/v1/admin/self-healing/issues/{id}/remediate": {
+      "post": {
+        "operationId": "SelfHealingController_remediateIssue",
+        "summary": "Trigger the remediation of an issue manually",
+        "tags": ["admin/self-healing"],
+        "security": [{ "jwt": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Remediation result" },
+          "404": { "description": "Issue not found" }
+        }
+      }
+    },
+    "/v1/admin/self-healing/cycle": {
+      "post": {
+        "operationId": "SelfHealingController_runCycle",
+        "summary": "Run a detection and remediation cycle immediately",
+        "tags": ["admin/self-healing"],
+        "security": [{ "jwt": [] }],
+        "responses": {
+          "200": { "description": "Cycle summary" }
+        }
+      }
+    },
+    "/v1/admin/self-healing/history": {
+      "get": {
+        "operationId": "SelfHealingController_getHistory",
+        "summary": "Get the remediation history (audit trail)",
+        "tags": ["admin/self-healing"],
+        "security": [{ "jwt": [] }],
+        "parameters": [
+          { "name": "status", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "actionType", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "issueId", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "target", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "from", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "to", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "required": false, "schema": { "type": "number" } },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "number" } }
+        ],
+        "responses": {
+          "200": { "description": "Remediation history" }
+        }
+      }
+    },
+    "/v1/admin/self-healing/analytics": {
+      "get": {
+        "operationId": "SelfHealingController_getAnalytics",
+        "summary": "Get the remediation analytics (success rate, time saved, false positives)",
+        "tags": ["admin/self-healing"],
+        "security": [{ "jwt": [] }],
+        "parameters": [
+          { "name": "hours", "in": "query", "required": false, "schema": { "type": "number" } }
+        ],
+        "responses": {
+          "200": { "description": "Remediation analytics" }
+        }
+      }
+    },
+    "/v1/admin/self-healing/policies": {
+      "get": {
+        "operationId": "SelfHealingController_getPolicies",
+        "summary": "List the remediation safety policies",
+        "tags": ["admin/self-healing"],
+        "security": [{ "jwt": [] }],
+        "responses": {
+          "200": { "description": "Remediation policies" }
+        }
+      }
+    },
+    "/v1/admin/self-healing/policies/{id}": {
+      "patch": {
+        "operationId": "SelfHealingController_updatePolicy",
+        "summary": "Update a remediation safety policy",
+        "tags": ["admin/self-healing"],
+        "security": [{ "jwt": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Updated policy" },
+          "404": { "description": "Policy not found" }
+        }
+      }
+    },
+    "/v1/admin/self-healing/scripts": {
+      "get": {
+        "operationId": "SelfHealingController_getScripts",
+        "summary": "List the registered custom remediation scripts",
+        "tags": ["admin/self-healing"],
+        "security": [{ "jwt": [] }],
+        "responses": {
+          "200": { "description": "Remediation scripts" }
+        }
+      },
+      "post": {
+        "operationId": "SelfHealingController_createScript",
+        "summary": "Register a custom remediation script",
+        "tags": ["admin/self-healing"],
+        "security": [{ "jwt": [] }],
+        "responses": {
+          "201": { "description": "Registered script" }
+        }
+      }
+    },
+    "/v1/admin/self-healing/scripts/{id}": {
+      "patch": {
+        "operationId": "SelfHealingController_updateScript",
+        "summary": "Update a custom remediation script",
+        "tags": ["admin/self-healing"],
+        "security": [{ "jwt": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Updated script" },
+          "404": { "description": "Script not found" }
+        }
+      }
+    },
+    "/v1/admin/self-healing/actions/{id}": {
+      "get": {
+        "operationId": "SelfHealingController_getAction",
+        "summary": "Get a single remediation action",
+        "tags": ["admin/self-healing"],
+        "security": [{ "jwt": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Remediation action" }
+        }
+      }
+    },
+    "/v1/admin/self-healing/actions/{id}/approve": {
+      "post": {
+        "operationId": "SelfHealingController_approveAction",
+        "summary": "Approve a pending remediation action and execute it",
+        "tags": ["admin/self-healing"],
+        "security": [{ "jwt": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Approved action" },
+          "404": { "description": "Action not found" }
+        }
+      }
+    },
+    "/v1/admin/self-healing/actions/{id}/reject": {
+      "post": {
+        "operationId": "SelfHealingController_rejectAction",
+        "summary": "Reject a pending remediation action",
+        "tags": ["admin/self-healing"],
+        "security": [{ "jwt": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Rejected action" },
+          "404": { "description": "Action not found" }
+        }
+      }
     }
   }
 }

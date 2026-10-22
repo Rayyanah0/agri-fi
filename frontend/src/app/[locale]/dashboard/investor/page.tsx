@@ -53,6 +53,35 @@ const AnchorWidget = dynamic(
   },
 );
 
+const DealHealthWidget = dynamic(
+  () =>
+    import("../../../../components/deals/DealHealthWidget").then((m) => ({
+      default: m.DealHealthWidget,
+    })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-24 skeleton rounded-xl" aria-label="Loading deal health…" />
+    ),
+  },
+);
+
+const PortfolioSummaryWidget = dynamic(
+  () =>
+    import("../../../../components/dashboard/PortfolioSummaryWidget").then(
+      (m) => ({ default: m.default }),
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        className="card h-72 skeleton"
+        aria-label="Loading portfolio summary…"
+      />
+    ),
+  },
+);
+
 const INV_STATUS: Record<string, string> = {
   confirmed: "badge-green",
   pending: "badge-yellow",
@@ -321,6 +350,8 @@ export default function InvestorDashboard() {
         {/* ── Portfolio tab ── */}
         {tab === "portfolio" && (
           <>
+            <PortfolioSummaryWidget />
+
             {!loading && investments.length > 0 && (
               <PortfolioChart data={portfolioHistory} />
             )}
@@ -511,6 +542,9 @@ export default function InvestorDashboard() {
                               />
                             </div>
                           </div>
+
+                          {/* Deal Health Indicators — Issue #1002 */}
+                          <DealHealthWidget dealId={inv.deal.id} compact />
 
                           <div className="flex gap-2 mt-auto">
                             <Link

@@ -11,6 +11,13 @@ import { CreateInvestmentDto } from './dto/create-investment.dto';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { TradeDeal } from '../trade-deals/entities/trade-deal.entity';
 import { Investment } from './entities/investment.entity';
+import { PortfolioVaRService } from './portfolio-var.service';
+import { IdempotencyService } from '../queue/idempotency.service';
+import { InvestmentEventStore } from './investment-event-store.service';
+import { TaxReportService } from './tax-report.service';
+import { ReceiptService } from './receipt.service';
+import { InvoiceService } from './invoice.service';
+import { PortfolioSummaryService } from './portfolio-summary.service';
 
 const mockInvestmentsService = {
   createInvestment: jest.fn(),
@@ -18,6 +25,13 @@ const mockInvestmentsService = {
 };
 
 const mockStellarService = {} as StellarService;
+const mockPortfolioVaRService = {
+  calculate: jest.fn(),
+  backtest: jest.fn(),
+  generateReport: jest.fn(),
+  stressTest: jest.fn(),
+  setLimit: jest.fn(),
+};
 
 describe('InvestmentsController', () => {
   let controller: InvestmentsController;
@@ -34,6 +48,16 @@ describe('InvestmentsController', () => {
       providers: [
         { provide: InvestmentsService, useValue: mockInvestmentsService },
         { provide: StellarService, useValue: mockStellarService },
+        { provide: IdempotencyService, useValue: {} },
+        { provide: InvestmentEventStore, useValue: {} },
+        { provide: TaxReportService, useValue: {} },
+        { provide: ReceiptService, useValue: {} },
+        { provide: InvoiceService, useValue: {} },
+        { provide: PortfolioSummaryService, useValue: {} },
+        {
+          provide: PortfolioVaRService,
+          useValue: mockPortfolioVaRService,
+        },
         { provide: getRepositoryToken(TradeDeal), useValue: {} },
         { provide: getRepositoryToken(Investment), useValue: {} },
         { provide: APP_GUARD, useClass: ThrottlerGuard },
@@ -60,6 +84,28 @@ describe('InvestmentsController', () => {
     expect(mockInvestmentsService.createInvestment).toHaveBeenCalledWith(
       'investor-1',
       dto,
+    );
+  });
+
+  it('delegates portfolio VaR calculation for the authenticated investor', async () => {
+    const request = { user: { id: 'investor-1' } };
+    const query = {
+      method: 'historical',
+      confidenceLevel: 0.99,
+      horizonDays: 10,
+    };
+    const expected = { varUsd: 125, expectedShortfallUsd: 160 };
+    mockPortfolioVaRService.calculate.mockResolvedValue(expected);
+
+    const result = await controller.getPortfolioVaR(
+      request as any,
+      query as any,
+    );
+
+    expect(result).toEqual(expected);
+    expect(mockPortfolioVaRService.calculate).toHaveBeenCalledWith(
+      'investor-1',
+      query,
     );
   });
 

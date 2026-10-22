@@ -1,3 +1,12 @@
+/**
+ * @deprecated Import from '../common/retry-policy' directly.
+ * Re-exported here for backwards compatibility.
+ */
+export { createRetryPolicy, DEFAULT_RETRY_POLICY, STELLAR_RETRY_POLICY } from '../common/retry-policy';
+export type { RetryPolicy, RetryPolicyOptions } from '../common/retry-policy';
+
+// ─── Legacy helpers kept for compatibility ────────────────────────────────────
+
 export const DEFAULT_QUEUE_MAX_RETRIES = 3;
 export const DEFAULT_BASE_DELAY_MS = 1000;
 export const DEFAULT_MAX_JITTER_MS = 500;

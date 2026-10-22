@@ -12,14 +12,32 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { User } from '../auth/entities/user.entity';
 import { FarmerCreditScoreHistory } from './entities/farmer-credit-score-history.entity';
+import {
+  calculateScoreFromFactors as calculateScore,
+  creditTierForScore,
+  FACTOR_WEIGHTS,
+  maxDealSizeForScore,
+  normalizeFactors,
+  CREDIT_SCORE_MAX,
+  CREDIT_SCORE_MIN,
+  CreditScoreTier,
+  ScoreFactorsInput,
+} from './credit-score.model';
 
-export interface ScoreFactorsInput {
-  onTimeRepaymentRate: number; // 0.0 to 1.0 (weight 35%)
-  dealCompletionRate: number; // 0.0 to 1.0 (weight 20%)
-  dealDefaultRate: number; // 0.0 to 1.0 (weight 20% - inverted)
-  shipmentMilestoneComplianceRate: number; // 0.0 to 1.0 (weight 15%)
-  kycVerificationAgeDays: number; // days since verified, normalized up to 365 (weight 10%)
-}
+/**
+ * The scoring model itself lives in `credit-score.model.ts`; these
+ * re-exports keep the historical import path working.
+ */
+export {
+  FACTOR_WEIGHTS,
+  NEUTRAL_FACTOR_VALUES,
+  normalizeFactors,
+} from './credit-score.model';
+export type {
+  CreditScoreTier,
+  PersistedScoreFactors,
+  ScoreFactorsInput,
+} from './credit-score.model';
 
 export interface FactorBreakdownItem {
   name: string;
@@ -32,7 +50,7 @@ export interface FactorBreakdownItem {
 
 export interface CreditScoreDisclosure {
   score: number;
-  tier: 'Excellent' | 'Good' | 'Fair' | 'Poor';
+  tier: CreditScoreTier;
   maxDealSizeUsdc: number;
   factors: ScoreFactorsInput;
   breakdown: Record<string, FactorBreakdownItem>;
@@ -40,14 +58,6 @@ export interface CreditScoreDisclosure {
   lastUpdated: string;
   cached: boolean;
 }
-
-export const FACTOR_WEIGHTS = {
-  onTimeRepayment: 0.35,
-  dealCompletion: 0.20,
-  defaultRate: 0.20,
-  shipmentMilestone: 0.15,
-  kycAge: 0.10,
-};
 
 const CREDIT_SCORE_CACHE_TTL_MS = 15 * 60 * 1_000; // 15-minute TTL
 
@@ -65,81 +75,74 @@ export class FarmerCreditScoringService {
     private readonly cacheManager?: Cache,
   ) {}
 
+  /**
+   * Maps the weighted factor sum onto the 300-850 credit range.
+   *
+   * Every factor is clamped to [0, 1] before it is weighted, so a bad
+   * input can never push the score outside the published range.
+   */
   public calculateScoreFromFactors(factors: ScoreFactorsInput): number {
-    const repaymentComponent =
-      Math.min(Math.max(factors.onTimeRepaymentRate, 0), 1) * FACTOR_WEIGHTS.onTimeRepayment;
-    const completionComponent =
-      Math.min(Math.max(factors.dealCompletionRate, 0), 1) * FACTOR_WEIGHTS.dealCompletion;
-    const defaultInverted = Math.max(
-      0,
-      1 - Math.min(Math.max(factors.dealDefaultRate, 0), 1),
-    );
-    const defaultComponent = defaultInverted * FACTOR_WEIGHTS.defaultRate;
-    const milestoneComponent =
-      Math.min(Math.max(factors.shipmentMilestoneComplianceRate, 0), 1) * FACTOR_WEIGHTS.shipmentMilestone;
-
-    // Normalize KYC age: 365 days or more gives full 1.0
-    const kycNormalized = Math.min(
-      Math.max(factors.kycVerificationAgeDays, 0) / 365,
-      1,
-    );
-    const kycComponent = kycNormalized * FACTOR_WEIGHTS.kycAge;
-
-    const weightedScore =
-      repaymentComponent +
-      completionComponent +
-      defaultComponent +
-      milestoneComponent +
-      kycComponent;
-
-    // Scale to FICO range: 300 to 850 (span 550)
-    const score = Math.round(300 + weightedScore * 550);
-    return Math.min(Math.max(score, 300), 850);
+    return calculateScore(factors);
   }
 
+  /**
+   * The uncollateralized deal ceiling a farmer may be offered at this
+   * score. Bands are aligned with the credit tiers so a farmer can only
+   * graduate to a higher ceiling by reaching the next tier.
+   */
   public deriveMaxDealSize(score: number): number {
-    if (score < 500) {
-      return 10000; // $10K
-    } else if (score < 700) {
-      return 50000; // $50K
-    } else {
-      return 200000; // $200K
-    }
+    return maxDealSizeForScore(score);
   }
 
-  public deriveScoreTier(score: number): 'Excellent' | 'Good' | 'Fair' | 'Poor' {
-    if (score >= 750) return 'Excellent';
-    if (score >= 670) return 'Good';
-    if (score >= 580) return 'Fair';
-    return 'Poor';
+  /**
+   * Credit tier for a score. Bands follow issue #1160:
+   * excellent 750+, good 700-749, fair 650-699, poor below 650.
+   */
+  public deriveScoreTier(score: number): CreditScoreTier {
+    return creditTierForScore(score);
   }
 
+  /**
+   * Actionable advice aimed at the dimensions that cost the farmer the
+   * most points, so the tips stay proportional to the weightings.
+   */
   public generateTips(factors: ScoreFactorsInput, score: number): string[] {
     const tips: string[] = [];
+    const f = normalizeFactors(factors);
 
-    if (factors.onTimeRepaymentRate < 0.95) {
+    if (f.onTimeRepaymentRate < 0.95) {
       tips.push(
-        'Maintain on-time delivery across upcoming harvest cycles. On-time delivery carries the highest weight (35%) in your score.',
+        'Maintain on-time delivery across upcoming harvest cycles. On-time delivery carries the highest weight (25%) in your score.',
       );
     }
-    if (factors.shipmentMilestoneComplianceRate < 0.90) {
+    if (f.shipmentMilestoneComplianceRate < 0.90) {
       tips.push(
-        'Log shipment checkpoints and keep IoT sensor telemetry active. Regular milestone updates account for 15% of your score.',
+        'Log shipment checkpoints and keep IoT sensor telemetry active. Regular milestone updates account for 10% of your score.',
       );
     }
-    if (factors.dealDefaultRate > 0) {
+    if (f.shipmentAccuracyRate < 0.90) {
+      tips.push(
+        'Have each shipment milestone confirmed by a trader or logistics verifier. Verified milestones account for 15% of your score.',
+      );
+    }
+    if (f.documentQualityRate < 0.90) {
+      tips.push(
+        'Upload complete, legible trade documents. Every supporting document is reviewed, and document quality accounts for 10% of your score.',
+      );
+    }
+    if (f.dealDefaultRate > 0) {
       tips.push(
         'Avoid cancelled or unfulfilled deals. Zero defaults protect 20% of your total credit rating.',
       );
     }
-    if (factors.dealCompletionRate < 0.90) {
+    if (f.dealCompletionRate < 0.90) {
       tips.push(
-        'Complete your active listed crops through final escrow release to build a solid track record (20% weight).',
+        'Complete your active listed crops through final escrow release to build a solid track record (15% weight).',
       );
     }
-    if (factors.kycVerificationAgeDays < 180) {
+    if (f.kycVerificationAgeDays < 180) {
       tips.push(
-        'Keep your farm registry and KYC documentation verified and up to date (10% weight).',
+        'Keep your farm registry and KYC documentation verified and up to date (5% weight).',
       );
     }
 
@@ -182,19 +185,16 @@ export class FarmerCreditScoringService {
       }
     }
 
-    // Retrieve latest score calculation or calculate default baseline
+    // Retrieve latest score calculation or fall back to a neutral profile
+    // for a farmer we have no history on yet.
     const latestHistory = await this.historyRepository.findOne({
       where: { userId },
       order: { createdAt: 'DESC' },
     });
 
-    const factors: ScoreFactorsInput = latestHistory?.factors ?? {
-      onTimeRepaymentRate: 0.95,
-      dealCompletionRate: 0.90,
-      dealDefaultRate: 0.02,
-      shipmentMilestoneComplianceRate: 0.92,
-      kycVerificationAgeDays: 180,
-    };
+    const factors: ScoreFactorsInput = normalizeFactors(
+      latestHistory?.factors ?? {},
+    );
 
     const score = user.creditScore ?? this.calculateScoreFromFactors(factors);
     const maxDealSizeUsdc = this.deriveMaxDealSize(score);
@@ -203,41 +203,61 @@ export class FarmerCreditScoringService {
 
     const breakdown: Record<string, FactorBreakdownItem> = {
       onTimeRepayment: {
-        name: 'On-Time Repayment & Delivery',
+        name: 'On-Time Delivery Rate',
         weight: FACTOR_WEIGHTS.onTimeRepayment,
-        weightPercent: '35%',
+        weightPercent: '25%',
         scorePercent: Math.round(factors.onTimeRepaymentRate * 100),
-        description: 'Track record of on-time crop deliveries against contractual dates.',
+        description:
+          'Share of contracted deliveries that reached the importer on or before the contractual date.',
         impact: factors.onTimeRepaymentRate >= 0.9 ? 'positive' : 'negative',
+      },
+      repaymentHistory: {
+        name: 'Repayment History',
+        weight: FACTOR_WEIGHTS.defaultRate,
+        weightPercent: '20%',
+        scorePercent: Math.round((1 - factors.dealDefaultRate) * 100),
+        description:
+          'History of settled obligations: cancelled, failed and expired deals reduce this figure.',
+        impact: factors.dealDefaultRate === 0 ? 'positive' : 'negative',
       },
       dealCompletion: {
         name: 'Deal Completion Rate',
         weight: FACTOR_WEIGHTS.dealCompletion,
-        weightPercent: '20%',
+        weightPercent: '15%',
         scorePercent: Math.round(factors.dealCompletionRate * 100),
         description: 'Ratio of trade deals successfully carried through to settlement.',
         impact: factors.dealCompletionRate >= 0.85 ? 'positive' : 'neutral',
       },
-      lowDefaultRate: {
-        name: 'Low Default & Cancellation Rate',
-        weight: FACTOR_WEIGHTS.defaultRate,
-        weightPercent: '20%',
-        scorePercent: Math.round((1 - factors.dealDefaultRate) * 100),
-        description: 'Absence of abandoned contracts, disputes, or buyer defaults.',
-        impact: factors.dealDefaultRate === 0 ? 'positive' : 'negative',
+      shipmentAccuracy: {
+        name: 'Shipment Accuracy',
+        weight: FACTOR_WEIGHTS.shipmentAccuracy,
+        weightPercent: '15%',
+        scorePercent: Math.round(factors.shipmentAccuracyRate * 100),
+        description:
+          'Share of recorded shipment milestones confirmed accurate by an independent verifier.',
+        impact: factors.shipmentAccuracyRate >= 0.9 ? 'positive' : 'neutral',
       },
       sensorMilestoneCompliance: {
         name: 'Shipment Milestones & IoT Uptime',
         weight: FACTOR_WEIGHTS.shipmentMilestone,
-        weightPercent: '15%',
+        weightPercent: '10%',
         scorePercent: Math.round(factors.shipmentMilestoneComplianceRate * 100),
         description: 'Prompt milestone check-ins and IoT telemetry transmission.',
         impact: factors.shipmentMilestoneComplianceRate >= 0.9 ? 'positive' : 'neutral',
       },
+      documentQuality: {
+        name: 'Document Quality',
+        weight: FACTOR_WEIGHTS.documentQuality,
+        weightPercent: '10%',
+        scorePercent: Math.round(factors.documentQualityRate * 100),
+        description:
+          'Share of uploaded supporting documents that passed verification review without rejection.',
+        impact: factors.documentQualityRate >= 0.9 ? 'positive' : 'neutral',
+      },
       kycAge: {
         name: 'KYC & Farm Verification Longevity',
         weight: FACTOR_WEIGHTS.kycAge,
-        weightPercent: '10%',
+        weightPercent: '5%',
         scorePercent: Math.min(Math.round((factors.kycVerificationAgeDays / 365) * 100), 100),
         description: 'Tenure of active identity and agricultural verification.',
         impact: factors.kycVerificationAgeDays >= 180 ? 'positive' : 'neutral',
@@ -266,6 +286,14 @@ export class FarmerCreditScoringService {
     return disclosure;
   }
 
+  /**
+   * Persists a score, its factor breakdown and a history row.
+   *
+   * `customFactors` should be the factors measured from the farmer's
+   * actual deal, milestone, document and payment history. When it is
+   * omitted the farmer is scored on the neutral profile, which carries no
+   * credit for a track record they have not built yet.
+   */
   async computeScore(
     userId: string,
     reason: string = 'Periodic recalculation',
@@ -280,13 +308,7 @@ export class FarmerCreditScoringService {
       throw new NotFoundException(`User with ID ${userId} not found`);
     }
 
-    const factors: ScoreFactorsInput = customFactors || {
-      onTimeRepaymentRate: 0.95,
-      dealCompletionRate: 0.9,
-      dealDefaultRate: 0.02,
-      shipmentMilestoneComplianceRate: 0.92,
-      kycVerificationAgeDays: 180,
-    };
+    const factors: ScoreFactorsInput = normalizeFactors(customFactors ?? {});
 
     const score = this.calculateScoreFromFactors(factors);
     const maxDealSizeUsdc = this.deriveMaxDealSize(score);
@@ -307,11 +329,7 @@ export class FarmerCreditScoringService {
     await this.historyRepository.save(history);
 
     // Invalidate Redis cache
-    if (this.cacheManager) {
-      try {
-        await this.cacheManager.del(`farmer:credit-score:${userId}`);
-      } catch {}
-    }
+    await this.invalidateCache(userId);
 
     this.logger.log(
       `Credit score updated for user ${userId}: ${score} (Tier max: $${maxDealSizeUsdc})`,
@@ -320,6 +338,10 @@ export class FarmerCreditScoringService {
     return { score, maxDealSizeUsdc, factors };
   }
 
+  /**
+   * Applies an administrator's manual correction to a farmer's score and
+   * records the override in the score history.
+   */
   async manualOverride(
     adminId: string,
     userId: string,
@@ -331,7 +353,7 @@ export class FarmerCreditScoringService {
       throw new NotFoundException(`User with ID ${userId} not found`);
     }
 
-    const boundedScore = Math.min(Math.max(score, 300), 850);
+    const boundedScore = Math.min(Math.max(score, CREDIT_SCORE_MIN), CREDIT_SCORE_MAX);
     const maxDealSizeUsdc = this.deriveMaxDealSize(boundedScore);
 
     user.creditScore = boundedScore;
@@ -346,6 +368,8 @@ export class FarmerCreditScoringService {
         dealCompletionRate: 1,
         dealDefaultRate: 0,
         shipmentMilestoneComplianceRate: 1,
+        shipmentAccuracyRate: 1,
+        documentQualityRate: 1,
         kycVerificationAgeDays: 365,
       },
       reason: `Admin override by ${adminId}: ${reason}`,
@@ -355,12 +379,18 @@ export class FarmerCreditScoringService {
     const saved = await this.historyRepository.save(history);
 
     // Invalidate Redis cache
-    if (this.cacheManager) {
-      try {
-        await this.cacheManager.del(`farmer:credit-score:${userId}`);
-      } catch {}
-    }
+    await this.invalidateCache(userId);
 
     return saved;
+  }
+
+  /** Drops the cached disclosure for a farmer so the next read is fresh. */
+  async invalidateCache(userId: string): Promise<void> {
+    if (!this.cacheManager) return;
+    try {
+      await this.cacheManager.del(`farmer:credit-score:${userId}`);
+    } catch (err: any) {
+      this.logger.warn(`Redis del failed for farmer:credit-score:${userId}: ${err.message}`);
+    }
   }
 }

@@ -483,7 +483,8 @@
     "creditTier": {
       "excellent": "Excelente",
       "good": "Bom",
-      "fair": "Regular"
+      "fair": "Regular",
+      "poor": "Precisa de melhoria"
     },
     "activeDeals": {
       "heading": "Negócios Ativos",
@@ -549,5 +550,66 @@
       "finish": "Começar"
     },
     "restart": "Reiniciar Tour"
+  }
+,
+  "theme": {
+    "title": "Aparência",
+    "description": "Personalize o esquema de cores, as cores da marca, o tamanho do texto e o contraste.",
+    "preview": {
+      "title": "Pré-visualização",
+      "label": "Pré-visualização do tema selecionado",
+      "hint": "As alterações são aplicadas primeiro à pré-visualização. Use Aplicar para mantê-las."
+    },
+    "scheme": {
+      "label": "Esquema de cores",
+      "light": "Claro",
+      "dark": "Escuro",
+      "high-contrast": "Alto contraste",
+      "system": "Sistema",
+      "systemLight": "A seguir o seu dispositivo: aparência clara.",
+      "systemDark": "A seguir o seu dispositivo: aparência escura."
+    },
+    "accent": {
+      "label": "Cores da marca",
+      "emerald": "Esmeralda",
+      "teal": "Verde-azulado",
+      "blue": "Azul",
+      "indigo": "Índigo",
+      "violet": "Violeta",
+      "amber": "Âmbar",
+      "rose": "Rosa",
+      "slate": "Ardósia",
+      "customBrand": "Cor da marca personalizada",
+      "customAccent": "Cor de destaque personalizada",
+      "apply": "Aplicar",
+      "hint": "Introduza um triplo HSL, por exemplo 142 50% 24%."
+    },
+    "fontSize": {
+      "label": "Tamanho do texto",
+      "small": "Pequeno",
+      "medium": "Médio",
+      "large": "Grande",
+      "extra-large": "Muito grande"
+    },
+    "contrast": {
+      "label": "Contraste",
+      "normal": "Normal",
+      "high": "Alto",
+      "extra-high": "Muito alto",
+      "hint": "Um contraste mais alto melhora a legibilidade para pessoas com baixa visão."
+    },
+    "actions": {
+      "reset": "Repor predefinições",
+      "sync": "Sincronizar entre dispositivos",
+      "cancelPreview": "Cancelar pré-visualização",
+      "applyPreview": "Aplicar pré-visualização"
+    },
+    "sync": {
+      "idle": "Não sincronizado",
+      "syncing": "A sincronizar…",
+      "synced": "Sincronizado entre dispositivos",
+      "error": "Falha na sincronização",
+      "offline": "Sincronização indisponível offline"
+    }
   }
 }

@@ -10,20 +10,28 @@ describe('DocumentsService malware scanning', () => {
     buffer: Buffer.from('document'),
   } as Express.Multer.File;
 
-   function createService(scanResult: Promise<unknown>) {
+   function createService(
+     scanResult: Promise<unknown>,
+     configValues: Record<string, unknown> = { CLAM_SCAN_ENABLED: true },
+   ) {
      const clamScanService = { scan: jest.fn(() => scanResult) };
      const auditService = { logEvent: jest.fn().mockResolvedValue(null) };
+     const config = {
+       get: jest.fn((key: string, defaultValue?: unknown) =>
+         key in configValues ? configValues[key] : defaultValue,
+       ),
+     };
      const service = new DocumentsService(
        {} as any,
        {} as any,
        {} as any,
        {} as any,
-       {} as any,
+       config as any,
        clamScanService as any,
        auditService as any,
        null,
      );
-     return { service, clamScanService, auditService };
+     return { service, clamScanService, auditService, config };
    }
 
   it('rejects out-of-order chunk uploads with a structured error', () => {
@@ -100,7 +108,7 @@ describe('DocumentsService malware scanning', () => {
     );
   });
 
-  it('fails closed when ClamAV is unavailable', async () => {
+  it('fails closed with a structured SCAN_UNAVAILABLE error when ClamAV is down', async () => {
     const { service, auditService } = createService(
       Promise.reject(new Error('ECONNREFUSED')),
     );
@@ -108,6 +116,60 @@ describe('DocumentsService malware scanning', () => {
     await expect(
       service.scanBeforeUpload(file, 'user-1'),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
+
+    await expect(service.scanBeforeUpload(file, 'user-1')).rejects.toMatchObject({
+      response: expect.objectContaining({
+        statusCode: 503,
+        code: 'SCAN_UNAVAILABLE',
+      }),
+    });
     expect(auditService.logEvent).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the scanner times out', async () => {
+    const { service } = createService(
+      Promise.reject(new Error('ClamAV scan timed out')),
+    );
+
+    await expect(
+      service.scanBeforeUpload(file, 'user-1'),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'SCAN_UNAVAILABLE' }),
+    });
+  });
+
+  it('rejects the upload before any storage work when the scan is unavailable', async () => {
+    const { service } = createService(
+      Promise.reject(new Error('ECONNREFUSED')),
+    );
+    const storageService = { upload: jest.fn() };
+    jest
+      .spyOn(service as any, 'getStorageService')
+      .mockResolvedValue(storageService as any);
+
+    await expect(
+      service.handleUpload({
+        file,
+        docType: 'bill_of_lading',
+        tradeDealId: 'deal-1',
+        userId: 'user-1',
+      }),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'SCAN_UNAVAILABLE' }),
+    });
+
+    expect(storageService.upload).not.toHaveBeenCalled();
+  });
+
+  it('skips scanning only when CLAM_SCAN_ENABLED is explicitly false', async () => {
+    const { service, clamScanService } = createService(
+      Promise.resolve({ isClean: true }),
+      { CLAM_SCAN_ENABLED: false },
+    );
+
+    await service.scanBeforeUpload(file, 'user-1');
+
+    expect(service.isScanningEnabled()).toBe(false);
+    expect(clamScanService.scan).not.toHaveBeenCalled();
   });
 });

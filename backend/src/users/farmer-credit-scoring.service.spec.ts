@@ -34,6 +34,8 @@ describe('FarmerCreditScoringService', () => {
       dealCompletionRate: 0,
       dealDefaultRate: 1.0, // 100% default
       shipmentMilestoneComplianceRate: 0,
+      shipmentAccuracyRate: 0,
+      documentQualityRate: 0,
       kycVerificationAgeDays: 0,
     });
     expect(score).toBe(300);
@@ -45,6 +47,8 @@ describe('FarmerCreditScoringService', () => {
       dealCompletionRate: 1.0,
       dealDefaultRate: 0,
       shipmentMilestoneComplianceRate: 1.0,
+      shipmentAccuracyRate: 1.0,
+      documentQualityRate: 1.0,
       kycVerificationAgeDays: 365,
     });
     expect(score).toBe(850);

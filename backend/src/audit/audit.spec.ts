@@ -104,6 +104,9 @@ describe('AuditModule', () => {
             actorRole: 'investor',
             route: 'POST /api/v1/funding',
             statusCode: 201,
+            logType: 'operational',
+            retentionPeriod: '1 year',
+            retentionUntil: expect.any(Date),
             requestDetails: {
               params: { id: '1' },
               query: { page: '1' },
@@ -150,6 +153,9 @@ describe('AuditModule', () => {
               actorRole: 'admin',
               route: 'DELETE /api/v1/deals/5',
               statusCode: 500,
+              logType: 'operational',
+              retentionPeriod: '1 year',
+              retentionUntil: expect.any(Date),
             }),
           );
           done();

@@ -54,6 +54,33 @@ const dataSourceConfig: any = {
   migrations: [join(__dirname, 'migrations', '*.{ts,js}')],
   synchronize: false,
   logging: false,
+  extra: {
+    min: parseInt(process.env.DATABASE_POOL_MIN ?? '2', 10),
+    max: parseInt(
+      process.env.DATABASE_POOL_MAX ??
+        (process.env.NODE_ENV === 'production' ? '5' : '10'),
+      10,
+    ),
+    idleTimeoutMillis: parseInt(
+      process.env.DATABASE_POOL_IDLE_TIMEOUT_MS ?? '30000',
+      10,
+    ),
+    connectionTimeoutMillis: parseInt(
+      process.env.DATABASE_POOL_CONNECTION_TIMEOUT_MS ?? '5000',
+      10,
+    ),
+    statement_timeout: parseInt(
+      process.env.DATABASE_STATEMENT_TIMEOUT_MS ?? '30000',
+      10,
+    ),
+    allowExitOnIdle: true,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
+    application_name: 'agri-fi-backend-cli',
+    onConnect: async (client: { query: (sql: string) => Promise<unknown> }) => {
+      await client.query('SELECT 1');
+    },
+  },
 };
 
 export const AppDataSource = new DataSource(dataSourceConfig);

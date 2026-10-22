@@ -80,6 +80,10 @@ blockchain/
         └── release/             # WASM binaries
 ```
 
+## Ethereum contracts
+
+Issue #1179 adds an independent Hardhat workspace under [`ethereum/`](ethereum/README.md). It provides an OpenZeppelin UUPS upgradeable escrow implementation configurable for simple, milestone, and arbitrated-dispute deals. The Ethereum workspace is separate from the Soroban Cargo workspace and has its own dependencies and deployment configuration.
+
 ## Building
 
 ### Build All Contracts

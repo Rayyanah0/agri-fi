@@ -1,10 +1,23 @@
 "use client";
 
-import { ThemeProvider as NextThemesProvider } from "next-themes";
-import type { ComponentProps } from "react";
+/**
+ * Backwards-compatible entry point for the theme provider.
+ *
+ * The implementation lives in `src/components/theme/ThemeProvider.tsx` since
+ * issue #1170 introduced a dedicated theme directory. This re-export keeps
+ * existing imports (`@/components/ThemeProvider`) working.
+ */
 
-type ThemeProviderProps = ComponentProps<typeof NextThemesProvider>;
+export {
+  ThemeProvider,
+  useThemePreferences,
+  themeScopeAttributes,
+  THEME_SCHEME_CLASSES,
+} from "./theme/ThemeProvider";
 
-export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
-  return <NextThemesProvider {...props}>{children}</NextThemesProvider>;
-}
+export type {
+  ThemeContextValue,
+  ThemeProviderProps,
+  ThemeScheme,
+  ThemeSyncStatus,
+} from "./theme/ThemeProvider";

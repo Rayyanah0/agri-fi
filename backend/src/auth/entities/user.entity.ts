@@ -3,6 +3,7 @@ import {
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
+  DeleteDateColumn,
 } from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
 import { Exclude } from 'class-transformer';
@@ -45,6 +46,32 @@ export interface CompanyDetails {
   companyName?: string;
   registrationNumber?: string;
   articlesOfIncorporationUrl?: string;
+}
+
+/**
+ * Appearance preferences stored on the user profile (#1170).
+ * Kept in sync across devices so the theme follows the user.
+ */
+export interface ThemePreferences {
+  /** light | dark | high-contrast | system */
+  variant?: string;
+  /** Accent palette identifier. */
+  accent?: string;
+  /** small | medium | large | extra-large */
+  fontSize?: string;
+  /** normal | high | extra-high */
+  contrast?: string;
+  /** Custom brand colour as an "H S% L%" triplet. */
+  customBrandColor?: string | null;
+  customBrandColorDark?: string | null;
+  customBrandFg?: string | null;
+  customBrandFgDark?: string | null;
+  customAccentColor?: string | null;
+  customAccentColorDark?: string | null;
+  customAccentFg?: string | null;
+  customAccentFgDark?: string | null;
+  /** ISO timestamp of the last change — used to resolve sync conflicts. */
+  updatedAt?: string;
 }
 
 @Entity('users')
@@ -362,4 +389,26 @@ export class User {
   @Column({ name: 'accreditation_rejection_reason', type: 'text', nullable: true })
   @ApiProperty({ description: 'Admin rejection reason when status is "rejected"', nullable: true })
   accreditationRejectionReason: string | null;
+
+  // #1170 — cross-device theme synchronisation
+  /**
+   * Persisted appearance preferences. Stored as JSONB so new appearance
+   * knobs can be added without a schema migration; the API validates the
+   * payload against the allow-lists before persisting it.
+   */
+  @Column({ name: 'theme_preferences', type: 'jsonb', nullable: true })
+  @ApiProperty({
+    description:
+      'Persisted appearance preferences (theme variant, accent, font size, contrast)',
+    required: false,
+    nullable: true,
+    example: {
+      variant: 'dark',
+      accent: 'emerald',
+      fontSize: 'medium',
+      contrast: 'normal',
+      updatedAt: '2026-01-15T10:30:00.000Z',
+    },
+  })
+  themePreferences: ThemePreferences | null;
 }

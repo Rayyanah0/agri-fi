@@ -438,7 +438,8 @@
     "creditTier": {
       "excellent": "Excellent",
       "good": "Bon",
-      "fair": "Correct"
+      "fair": "Correct",
+      "poor": "À améliorer"
     },
     "activeDeals": {
       "heading": "Contrats Actifs",
@@ -504,5 +505,66 @@
       "finish": "Commencer"
     },
     "restart": "Redémarrer la Visite"
+  }
+,
+  "theme": {
+    "title": "Apparence",
+    "description": "Personnalisez le thème de couleur, les couleurs de marque, la taille du texte et le contraste.",
+    "preview": {
+      "title": "Aperçu",
+      "label": "Aperçu du thème sélectionné",
+      "hint": "Les modifications s'appliquent d'abord à l'aperçu. Utilisez Appliquer pour les conserver."
+    },
+    "scheme": {
+      "label": "Thème de couleur",
+      "light": "Clair",
+      "dark": "Sombre",
+      "high-contrast": "Contraste élevé",
+      "system": "Système",
+      "systemLight": "Selon votre appareil : apparence claire.",
+      "systemDark": "Selon votre appareil : appearance sombre."
+    },
+    "accent": {
+      "label": "Couleurs de marque",
+      "emerald": "Émeraude",
+      "teal": "Sarcelle",
+      "blue": "Bleu",
+      "indigo": "Indigo",
+      "violet": "Violet",
+      "amber": "Ambre",
+      "rose": "Rose",
+      "slate": "Ardoise",
+      "customBrand": "Couleur de marque personnalisée",
+      "customAccent": "Couleur d'accent personnalisée",
+      "apply": "Appliquer",
+      "hint": "Saisissez un triplet HSL, par exemple 142 50% 24%."
+    },
+    "fontSize": {
+      "label": "Taille du texte",
+      "small": "Petite",
+      "medium": "Moyenne",
+      "large": "Grande",
+      "extra-large": "Très grande"
+    },
+    "contrast": {
+      "label": "Contraste",
+      "normal": "Normal",
+      "high": "Élevé",
+      "extra-high": "Très élevé",
+      "hint": "Un contraste plus élevé améliore la lisibilité pour les personnes malvoyantes."
+    },
+    "actions": {
+      "reset": "Réinitialiser",
+      "sync": "Synchroniser entre les appareils",
+      "cancelPreview": "Annuler l'aperçu",
+      "applyPreview": "Appliquer l'aperçu"
+    },
+    "sync": {
+      "idle": "Non synchronisé",
+      "syncing": "Synchronisation…",
+      "synced": "Synchronisé entre les appareils",
+      "error": "Échec de la synchronisation",
+      "offline": "Synchronisation indisponible hors ligne"
+    }
   }
 }

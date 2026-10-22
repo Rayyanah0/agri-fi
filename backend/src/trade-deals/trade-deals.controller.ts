@@ -3,6 +3,7 @@ import {
   Delete,
   Get,
   Post,
+  Patch,
   Param,
   Query,
   Body,
@@ -15,6 +16,7 @@ import {
 import {
   CACHE_MANAGER,
   CacheInterceptor,
+  CacheKey,
   CacheTTL,
 } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
@@ -42,10 +44,14 @@ import {
 } from './dto/co-farmer.dto';
 import { DealCoFarmer } from './entities/deal-co-farmer.entity';
 import { ActivityFeedResponseDto } from './dto/activity-feed.dto';
+import { ActivityFeedService } from './activity-feed.service';
 
 import { TradeDealAccessRequest, TradeDealsGuard } from './trade-deals.guard';
 
 import { EsgScoringService, EsgQuestionnaireDto } from './esg-scoring.service';
+import { DealHealthService } from './deal-health.service';
+import { RiskScoringService } from './risk-scoring.service';
+import { marketplaceCacheKey, viewerIdOf } from './marketplace-cache-key';
 
 interface AuthRequest extends Request {
   user: User;
@@ -60,6 +66,9 @@ export class TradeDealsController {
     private readonly dealDeploymentService: DealDeploymentService,
     private readonly activityFeedService: ActivityFeedService,
     private readonly esgScoringService: EsgScoringService,
+    private readonly dealHealthService: DealHealthService,
+    private readonly riskScoringService: RiskScoringService,
+    private readonly dealSuggestionsService: DealSuggestionsService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
@@ -268,9 +277,16 @@ export class TradeDealsController {
 
   @Get()
   @Throttle({ marketplace: { limit: 60, ttl: 60000 } })
+  @UseGuards(OptionalJwtGuard)
   @UseInterceptors(CacheInterceptor)
   @CacheTTL(30000)
-  @ApiOperation({ summary: 'List open trade deals (marketplace)' })
+  @CacheKey(marketplaceCacheKey)
+  @ApiOperation({
+    summary: 'List open trade deals (marketplace)',
+    description:
+      'Send an access token to have each row carry the `watched` flag from #1003. The listing is cached per viewer.',
+  })
+  @ApiBearerAuth('jwt')
   @ApiQuery({ name: 'commodity', required: false, example: 'Cocoa' })
   @ApiQuery({ name: 'country', required: false, example: 'Nigeria' })
   @ApiQuery({ name: 'region', required: false, example: 'Ashanti' })
@@ -290,8 +306,10 @@ export class TradeDealsController {
   @ApiResponse({ status: 200, description: 'Paginated list of open deals' })
   async findOpen(
     @Query() query: Record<string, string | undefined> = {},
+    @Request() req: Request,
   ): Promise<{ data: any[]; total: number; page: number; limit: number }> {
     return this.tradeDealsService.findOpen({
+      viewerId: viewerIdOf(req),
       commodity: query.commodity,
       country: query.country,
       region: query.region,
@@ -403,7 +421,10 @@ export class TradeDealsController {
     summary: 'Submit standardized ESG questionnaire for a trade deal',
   })
   @ApiParam({ name: 'id', description: 'Trade deal UUID' })
-  @ApiResponse({ status: 200, description: 'ESG questionnaire processed and queued for review' })
+  @ApiResponse({
+    status: 200,
+    description: 'ESG questionnaire processed and queued for review',
+  })
   @ApiResponse({ status: 403, description: 'Not authorized for this deal' })
   @ApiResponse({ status: 404, description: 'Trade deal not found' })
   async submitEsgQuestionnaire(
@@ -427,17 +448,35 @@ export class TradeDealsController {
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('admin', 'compliance_officer')
   @ApiBearerAuth('jwt')
-  @ApiOperation({ summary: 'List deals pending ESG compliance review (Admin only)' })
+  @ApiOperation({
+    summary: 'List deals pending ESG compliance review (Admin only)',
+  })
   @ApiResponse({ status: 200, description: 'Pending ESG review deals list' })
   async getEsgReviewQueue() {
     return this.esgScoringService.getPendingReviewDeals();
+  }
+
+  // ── Deal Health Indicators (#1002) ────────────────────────────────────────
+
+  @Get(':id/health')
+  @ApiOperation({
+    summary:
+      'Get computed deal health snapshot: risk score, funding pace vs. timeline, and milestone progress vs. expected schedule',
+  })
+  @ApiParam({ name: 'id', description: 'Trade deal UUID' })
+  @ApiResponse({ status: 200, description: 'Deal health snapshot' })
+  @ApiResponse({ status: 404, description: 'Trade deal not found' })
+  async getDealHealth(@Param('id') id: string) {
+    return this.dealHealthService.getDealHealth(id);
   }
 
   @Patch(':id/esg-review')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('admin', 'compliance_officer')
   @ApiBearerAuth('jwt')
-  @ApiOperation({ summary: 'Approve, reject, or adjust ESG review for a deal (Admin only)' })
+  @ApiOperation({
+    summary: 'Approve, reject, or adjust ESG review for a deal (Admin only)',
+  })
   @ApiParam({ name: 'id', description: 'Trade deal UUID' })
   @ApiResponse({ status: 200, description: 'ESG review decision applied' })
   async reviewEsgScore(
@@ -452,5 +491,230 @@ export class TradeDealsController {
       body.notes,
       body.adjustedScore,
     );
+  }
+
+  @Post(':id/esg-data')
+  @UseGuards(AuthGuard('jwt'), RolesGuard, KycGuard)
+  @Roles('trader', 'farmer')
+  @ApiBearerAuth('jwt')
+  @ApiOperation({ summary: 'Update or collect specific ESG data metrics for a deal' })
+  @ApiParam({ name: 'id', description: 'Trade deal UUID' })
+  async collectDealEsgData(
+    @Param('id') id: string,
+    @Request() req: AuthRequest,
+    @Body() dto: Partial<EsgQuestionnaireDto>,
+  ) {
+    return this.esgScoringService.collectDealEsgData(id, req.user.id, dto);
+  }
+
+  @Get('esg/portfolio/summary')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth('jwt')
+  @ApiOperation({ summary: 'Get aggregate portfolio ESG score and distribution for authenticated investor' })
+  async getPortfolioEsgSummary(@Request() req: AuthRequest) {
+    return this.esgScoringService.aggregatePortfolioEsg(req.user.id);
+  }
+
+  @Get('esg/benchmarks')
+  @ApiOperation({ summary: 'Get agricultural industry ESG benchmarks (SASB FB-AG / GRI 13)' })
+  @ApiQuery({ name: 'commodity', required: false })
+  async getEsgBenchmarks(@Query('commodity') commodity?: string) {
+    return this.esgScoringService.getIndustryBenchmarks(commodity);
+  }
+
+  @Get(':id/esg-benchmark')
+  @ApiOperation({ summary: 'Benchmark a deal against SASB/GRI agricultural standards' })
+  @ApiParam({ name: 'id', description: 'Trade deal UUID' })
+  async benchmarkDeal(@Param('id') id: string) {
+    return this.esgScoringService.benchmarkDeal(id);
+  }
+
+  @Get(':id/esg-report')
+  @ApiOperation({ summary: 'Generate structured ESG disclosure report for a deal' })
+  @ApiParam({ name: 'id', description: 'Trade deal UUID' })
+  @ApiQuery({ name: 'type', required: false, enum: ['investor', 'regulator'] })
+  async getDealEsgReport(
+    @Param('id') id: string,
+    @Query('type') type?: 'investor' | 'regulator',
+  ) {
+    return this.esgScoringService.generateEsgReport({
+      dealId: id,
+      reportType: type || 'investor',
+    });
+  }
+
+  @Get('esg/reports/portfolio')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth('jwt')
+  @ApiOperation({ summary: 'Generate structured ESG disclosure report for investor portfolio' })
+  @ApiQuery({ name: 'type', required: false, enum: ['investor', 'regulator'] })
+  async getPortfolioEsgReport(
+    @Request() req: AuthRequest,
+    @Query('type') type?: 'investor' | 'regulator',
+  ) {
+    return this.esgScoringService.generateEsgReport({
+      investorId: req.user.id,
+      reportType: type || 'investor',
+    });
+  }
+
+  @Get(':id/esg-optimization')
+  @ApiOperation({ summary: 'Get targeted ESG improvement suggestions and score uplift estimates' })
+  @ApiParam({ name: 'id', description: 'Trade deal UUID' })
+  async getEsgOptimizationSuggestions(@Param('id') id: string) {
+    return this.esgScoringService.getOptimizationSuggestions(id);
+  }
+
+  @Post(':id/esg-certify')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('admin', 'compliance_officer')
+  @ApiBearerAuth('jwt')
+  @ApiOperation({ summary: 'Issue cryptographic ESG certificate for eligible high-ESG deal (Admin only)' })
+  @ApiParam({ name: 'id', description: 'Trade deal UUID' })
+  async certifyDeal(@Param('id') id: string, @Request() req: AuthRequest) {
+    return this.esgScoringService.certifyDeal(id, req.user.id);
+  }
+
+  @Get(':id/esg-certificate')
+  @ApiOperation({ summary: 'Retrieve verified ESG certificate for a deal' })
+  @ApiParam({ name: 'id', description: 'Trade deal UUID' })
+  async getDealCertificate(@Param('id') id: string) {
+    return this.esgScoringService.getDealCertificate(id);
+  }
+
+  @Get('esg/analytics')
+  @ApiOperation({ summary: 'Platform-level ESG analytics, rating distributions, and financial return correlations' })
+  async getEsgAnalytics() {
+    return this.esgScoringService.getEsgAnalytics();
+  }
+
+  // ── Predictive text & smart suggestions (#1180) ───────────────────────────
+
+  @Get('suggestions')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth('jwt')
+  @ApiOperation({
+    summary:
+      'Get predictive text and smart suggestions for deal creation fields (crops, regions, routes, amounts, recurring fields)',
+  })
+  @ApiQuery({ name: 'field', required: false, example: 'commodity' })
+  @ApiQuery({ name: 'q', required: false, example: 'coc' })
+  @ApiQuery({ name: 'limit', required: false, example: 10 })
+  @ApiResponse({ status: 200, description: 'Ranked suggestions for the field' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async getSuggestions(
+    @Request() req: AuthRequest,
+    @Query() query: SuggestionQueryDto,
+  ) {
+    return this.dealSuggestionsService.getSuggestions(req.user.id, query);
+  }
+
+  @Get('templates')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth('jwt')
+  @ApiOperation({
+    summary: 'List deal templates for template-based deal creation',
+  })
+  @ApiResponse({ status: 200, description: 'Available deal templates' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async listTemplates(@Request() req: AuthRequest) {
+    return this.dealSuggestionsService.listTemplates(req.user.id);
+  }
+
+  @Post('from-template')
+  @UseGuards(AuthGuard('jwt'), RolesGuard, KycGuard)
+  @Roles('trader', 'farmer')
+  @ApiBearerAuth('jwt')
+  @ApiOperation({
+    summary: 'Create a draft trade deal pre-filled from a template',
+  })
+  @ApiResponse({ status: 201, description: 'Trade deal created from template' })
+  @ApiResponse({ status: 400, description: 'Validation error' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Role or KYC requirement not met' })
+  @ApiResponse({ status: 404, description: 'Template not found' })
+  async createFromTemplate(
+    @Request() req: AuthRequest,
+    @Body() dto: CreateFromTemplateDto,
+  ): Promise<TradeDeal> {
+    const deal = await this.dealSuggestionsService.createFromTemplate(
+      req.user.id,
+      dto,
+    );
+    await (this.cacheManager.stores[0] as any).reset();
+    return deal;
+  }
+
+  @Post('batch')
+  @UseGuards(AuthGuard('jwt'), RolesGuard, KycGuard)
+  @Roles('trader', 'farmer')
+  @ApiBearerAuth('jwt')
+  @ApiOperation({
+    summary: 'Create multiple similar draft deals from a template in one request',
+  })
+  @ApiResponse({ status: 201, description: 'Batch of trade deals created' })
+  @ApiResponse({ status: 400, description: 'Validation error' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Role or KYC requirement not met' })
+  @ApiResponse({ status: 404, description: 'Template not found' })
+  async createBatch(
+    @Request() req: AuthRequest,
+    @Body() dto: BatchDealCreationDto,
+  ): Promise<{ created: TradeDeal[]; failed: any[] }> {
+    const result = await this.dealSuggestionsService.createBatch(
+      req.user.id,
+      dto,
+    );
+    await (this.cacheManager.stores[0] as any).reset();
+    return result;
+  }
+
+  @Post('similarity-check')
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(200)
+  @ApiBearerAuth('jwt')
+  @ApiOperation({
+    summary:
+      'Detect existing deals similar to the proposed deal and warn about potential duplicates',
+  })
+  @ApiResponse({ status: 200, description: 'Similarity check result' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async checkSimilarity(
+    @Request() req: AuthRequest,
+    @Body() dto: DealSimilarityCheckDto,
+  ) {
+    return this.dealSuggestionsService.checkSimilarity(req.user.id, dto);
+  }
+
+  @Post('suggestion-feedback')
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(200)
+  @ApiBearerAuth('jwt')
+  @ApiOperation({
+    summary:
+      'Record suggestion acceptance/rejection or user correction to improve future suggestions',
+  })
+  @ApiResponse({ status: 200, description: 'Feedback recorded' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async recordSuggestionFeedback(
+    @Request() req: AuthRequest,
+    @Body() dto: SuggestionFeedbackDto,
+  ) {
+    return this.dealSuggestionsService.recordFeedback(req.user.id, dto);
+  }
+
+  @Get('suggestion-analytics')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('admin', 'trader')
+  @ApiBearerAuth('jwt')
+  @ApiOperation({
+    summary:
+      'Get suggestion analytics: acceptance rate and estimated time saved',
+  })
+  @ApiResponse({ status: 200, description: 'Suggestion analytics summary' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Role requirement not met' })
+  async getSuggestionAnalytics(@Request() req: AuthRequest) {
+    return this.dealSuggestionsService.getAnalytics(req.user.id, req.user.role);
   }
 }

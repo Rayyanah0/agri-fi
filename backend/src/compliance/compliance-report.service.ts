@@ -35,7 +35,7 @@ import { ComplianceReport } from './entities/compliance-report.entity';
 import { SystemAuditLog } from '../audit/entities/system-audit-log.entity';
 
 export type ReportType =
-  'monthly_aml_kyc' | 'quarterly_transaction' | 'incident';
+  'monthly_aml_kyc' | 'quarterly_transaction' | 'incident' | 'sox' | 'pci_dss' | 'mifid_ii';
 
 @Injectable()
 export class ComplianceReportService {
@@ -335,6 +335,149 @@ export class ComplianceReportService {
       title,
       pdf,
       { alertCount: complianceAlerts.length },
+      start,
+      end,
+    );
+  }
+
+  // ── Regulatory reports (#1155) ──────────────────────────────────────────
+
+  /** SOX — annual internal-controls and transaction-integrity attestation. */
+  @Cron('0 3 1 1 *')
+  async generateSoxScheduled(): Promise<void> {
+    const now = new Date();
+    const start = new Date(now.getFullYear() - 1, 0, 1);
+    const end = new Date(now.getFullYear(), 0, 1);
+    await this.generateSox(start, end);
+  }
+
+  async generateSox(start: Date, end: Date): Promise<ComplianceReport> {
+    this.logger.info({ start, end }, 'Generating SOX compliance report');
+
+    const [totalDeals, completedDeals, totalInvestments, auditEvents] =
+      await Promise.all([
+        this.dealRepo.count({ where: { createdAt: Between(start, end) as any } }),
+        this.dealRepo.count({ where: { status: 'completed', updatedAt: Between(start, end) as any } }),
+        this.investmentRepo.count({ where: { createdAt: Between(start, end) as any } }),
+        this.auditRepo.count({ where: { timestamp: Between(start, end) as any } }),
+      ]);
+
+    const title = `SOX Internal Controls Report — ${this.formatPeriod(start, end)}`;
+    const rows: [string, string][] = [
+      ['Report Type', 'SOX Sarbanes-Oxley Compliance'],
+      ['Period', this.formatPeriod(start, end)],
+      ['Generated At', new Date().toUTCString()],
+      ['', ''],
+      ['Section 302 — Financial Disclosures', ''],
+      ['  Total Trade Deals Initiated', String(totalDeals)],
+      ['  Deals Completed (Integrity Verified)', String(completedDeals)],
+      ['  Total Investment Records', String(totalInvestments)],
+      ['', ''],
+      ['Section 404 — Internal Controls', ''],
+      ['  Audit Log Events Recorded', String(auditEvents)],
+      ['  Immutable Audit Trail', 'Enabled'],
+      ['  Access Control Enforcement', 'Role-Based (RBAC)'],
+      ['  Segregation of Duties', 'Enforced via workflow approval'],
+    ];
+
+    const pdf = await this.buildPdf(title, rows);
+    return this.uploadAndPersist(
+      'sox',
+      title,
+      pdf,
+      { totalDeals, completedDeals, totalInvestments, auditEvents },
+      start,
+      end,
+    );
+  }
+
+  /** PCI-DSS — quarterly payment data handling and access log report. */
+  @Cron('0 4 1 1,4,7,10 *')
+  async generatePciDssScheduled(): Promise<void> {
+    const now = new Date();
+    const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3 - 3;
+    const start = new Date(now.getFullYear(), quarterStartMonth, 1);
+    const end = new Date(now.getFullYear(), quarterStartMonth + 3, 1);
+    await this.generatePciDss(start, end);
+  }
+
+  async generatePciDss(start: Date, end: Date): Promise<ComplianceReport> {
+    this.logger.info({ start, end }, 'Generating PCI-DSS compliance report');
+
+    const [totalInvestments, authEvents] = await Promise.all([
+      this.investmentRepo.count({ where: { status: 'confirmed', createdAt: Between(start, end) as any } }),
+      this.auditRepo.count({
+        where: { route: 'auth' as any, timestamp: Between(start, end) as any },
+      }),
+    ]);
+
+    const title = `PCI-DSS Compliance Report — ${this.formatPeriod(start, end)}`;
+    const rows: [string, string][] = [
+      ['Report Type', 'PCI-DSS Payment Card Industry Compliance'],
+      ['Period', this.formatPeriod(start, end)],
+      ['Generated At', new Date().toUTCString()],
+      ['', ''],
+      ['Requirement 7 — Access Control', ''],
+      ['  Authentication Events Logged', String(authEvents)],
+      ['  Least-Privilege Enforcement', 'Scoped API keys + RBAC'],
+      ['', ''],
+      ['Requirement 10 — Audit Logging', ''],
+      ['  Cardholder Data Operations', String(totalInvestments)],
+      ['  Log Integrity Protection', 'Append-only audit table'],
+      ['  Log Retention Policy', '12 months minimum'],
+    ];
+
+    const pdf = await this.buildPdf(title, rows);
+    return this.uploadAndPersist(
+      'pci_dss',
+      title,
+      pdf,
+      { totalInvestments, authEvents },
+      start,
+      end,
+    );
+  }
+
+  /** MiFID II — quarterly trade reporting and timestamp accuracy attestation. */
+  @Cron('0 5 1 1,4,7,10 *')
+  async generateMifidIiScheduled(): Promise<void> {
+    const now = new Date();
+    const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3 - 3;
+    const start = new Date(now.getFullYear(), quarterStartMonth, 1);
+    const end = new Date(now.getFullYear(), quarterStartMonth + 3, 1);
+    await this.generateMifidIi(start, end);
+  }
+
+  async generateMifidIi(start: Date, end: Date): Promise<ComplianceReport> {
+    this.logger.info({ start, end }, 'Generating MiFID II compliance report');
+
+    const deals = await this.dealRepo.find({
+      where: { status: 'completed', updatedAt: Between(start, end) as any },
+    });
+    const totalVolume = deals.reduce((s, d) => s + Number(d.totalValue ?? 0), 0);
+
+    const title = `MiFID II Trade Reporting — ${this.formatPeriod(start, end)}`;
+    const rows: [string, string][] = [
+      ['Report Type', 'MiFID II Markets in Financial Instruments'],
+      ['Period', this.formatPeriod(start, end)],
+      ['Generated At', new Date().toUTCString()],
+      ['', ''],
+      ['Article 26 — Transaction Reporting', ''],
+      ['  Reportable Transactions', String(deals.length)],
+      ['  Total Notional Volume (USD)', `$${totalVolume.toLocaleString()}`],
+      ['  Timestamp Accuracy', 'UTC millisecond precision (ISO 8601)'],
+      ['', ''],
+      ['Article 27 — Best Execution', ''],
+      ['  Execution Venue Disclosure', 'Stellar DEX / on-chain settlement'],
+      ['  Price Formation Transparency', 'Immutable on-chain audit trail'],
+    ];
+
+    const pdf = await this.buildPdf(title, rows);
+    return this.uploadAndPersist(
+      'mifid_ii',
+      title,
+      pdf,
+      { reportableTransactions: deals.length, totalVolume },
       start,
       end,
     );

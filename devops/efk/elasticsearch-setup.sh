@@ -66,6 +66,19 @@ curl -s -X PUT $AUTH "$ES_URL/_index_template/agri-fi-logs-template" \
   -d @index-template.json | jq .
 echo ""
 
+# 4b. Create the rollover bootstrap index and write alias. Fluentd/Logstash
+#     write to the `agri-fi-logs` alias which must exist before the first
+#     document is indexed.
+echo "✓ Creating rollover bootstrap index 'agri-fi-logs-000001' + write alias..."
+curl -s -X PUT $AUTH "$ES_URL/agri-fi-logs-000001" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "aliases": {
+      "agri-fi-logs": { "is_write_index": true }
+    }
+  }' | jq .
+echo ""
+
 # 5. Apply ILM policy to existing indices (optional, for indices created before template)
 echo "✓ Applying ILM policy to existing indices matching 'agri-fi-*'..."
 curl -s -X PUT $AUTH "$ES_URL/agri-fi-*/_settings" \

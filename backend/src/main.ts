@@ -20,6 +20,8 @@ import {
 } from '@nestjs/common';
 import { SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { injectApplicationSecrets } from './secrets/secrets.bootstrap';
+import { startTracing, shutdownTracing } from './tracing/tracing';
 import { buildOpenApiConfig } from './common/swagger/swagger.config';
 import { applySecurityHeaders } from './common/middleware/security-headers.middleware';
 import { Logger } from 'nestjs-pino';
@@ -31,6 +33,11 @@ import * as cookieParser from 'cookie-parser';
 import * as csrf from 'csurf';
 
 async function bootstrap() {
+  await injectApplicationSecrets();
+  // Initialise OpenTelemetry tracing (#1233) before the Nest application (and
+  // therefore any instrumented request handling) starts.
+  startTracing();
+
   // rawBody: true preserves the unparsed request buffer on req.rawBody,
   // which is required by WebhookSignatureGuard for HMAC verification.
   //
@@ -98,7 +105,12 @@ async function bootstrap() {
   const csrfProtection = csrf({
     cookie: { httpOnly: true, sameSite: 'strict' },
   });
-  app.use(csrfProtection);
+  app.use((req: any, res: any, next: () => void) => {
+    if (req.path === '/v1/edge/heartbeat' || req.path === '/v1/edge/sync') {
+      return next();
+    }
+    csrfProtection(req, res, next);
+  });
 
   // Expose CSRF token so clients can fetch it before mutating requests
   app.use('/csrf-token', (req: any, res: any) => {
@@ -162,6 +174,17 @@ async function bootstrap() {
   // Use the fully-configured setupSwagger (includes production Basic-Auth guard)
   // instead of the previous inline setup that had no authentication.
   setupSwagger(app);
+
+  app.enableShutdownHooks();
+
+  // Flush pending spans before the process exits (#1233).
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.on(signal, () => {
+      shutdownTracing()
+        .catch(() => undefined)
+        .finally(() => process.exit(0));
+    });
+  }
 
   const port = process.env.PORT ?? 3001;
   await app.listen(port);

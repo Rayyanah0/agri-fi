@@ -300,6 +300,93 @@ export class SorobanService {
     return Number(result ?? 0);
   }
 
+  // ── Dispute resolution (issue #1004) ────────────────────────────────────────
+
+  /**
+   * Raises a dispute on a milestone, freezing its release and opening the
+   * contract's arbitrator voting window. The platform account is a dispute
+   * party (it is the campaign admin), so it can sign this call; the contract
+   * itself rejects callers that are not admin/farmer/staked investors.
+   */
+  async raiseCampaignDispute(
+    contractId: string,
+    milestoneIndex: number,
+  ): Promise<string> {
+    const args = [
+      new Address(this.platformKeypair.publicKey()).toScVal(),
+      nativeToScVal(milestoneIndex, { type: 'u32' }),
+    ];
+    return this.invokeContract(contractId, 'raise_dispute', args);
+  }
+
+  /**
+   * Attaches an evidence reference (document URI) to an undecided dispute.
+   */
+  async submitDisputeEvidence(
+    contractId: string,
+    milestoneIndex: number,
+    uri: string,
+  ): Promise<string> {
+    const args = [
+      new Address(this.platformKeypair.publicKey()).toScVal(),
+      nativeToScVal(milestoneIndex, { type: 'u32' }),
+      nativeToScVal(uri, { type: 'string' }),
+    ];
+    return this.invokeContract(contractId, 'submit_dispute_evidence', args);
+  }
+
+  /**
+   * Executes the recorded verdict for a dispute: releases the tranche to the
+   * farmer, or converts remaining escrow into investor refunds. Requires the
+   * voting window to have closed (or a quorum verdict to exist).
+   */
+  async resolveCampaignDispute(
+    contractId: string,
+    milestoneIndex: number,
+  ): Promise<string> {
+    const args = [
+      new Address(this.platformKeypair.publicKey()).toScVal(),
+      nativeToScVal(milestoneIndex, { type: 'u32' }),
+    ];
+    return this.invokeContract(contractId, 'resolve_dispute', args);
+  }
+
+  /**
+   * Authoritative on-chain dispute record for one milestone: phase, voting
+   * deadline, tally, evidence and outcome. `null` when no dispute was raised.
+   */
+  async getCampaignDispute(
+    contractId: string,
+    milestoneIndex: number,
+  ): Promise<unknown> {
+    const args = [nativeToScVal(milestoneIndex, { type: 'u32' })];
+    return this.readContract(contractId, 'get_dispute', args);
+  }
+
+  /** Voting window, in seconds, granted to disputes opened from now on. */
+  async getDisputeVotingWindow(contractId: string): Promise<number> {
+    const result = await this.readContract(
+      contractId,
+      'get_dispute_voting_window',
+      [],
+    );
+    return Number(result ?? 0);
+  }
+
+  /**
+   * Addresses allowed to vote. Falls back to the single legacy `arbitrator`
+   * storage entry when no pool was configured, matching the contract.
+   */
+  async getArbitratorPool(contractId: string): Promise<string[]> {
+    const result = await this.readContract(
+      contractId,
+      'get_arbitrator_pool',
+      [],
+    );
+    if (Array.isArray(result)) return result.map(String);
+    return [];
+  }
+
   // ── ProjectFactory contract methods ─────────────────────────────────────────
 
   async deployFarmCampaign(
@@ -755,6 +842,120 @@ export class SorobanService {
       contractId,
       'get_distribution_count',
       [],
+    );
+    return Number(result ?? 0);
+  }
+
+  // ── Federated Learning participant & reward helpers (#1191) ─────────────────
+
+  /**
+   * Verifies that a federated learning participant address is registered and
+   * active on-chain. Used during participant onboarding to ensure only
+   * verified platforms join the network.
+   *
+   * @param registryContractId Federated learning registry contract address
+   * @param participantAddress Participant's Stellar wallet address
+   */
+  async verifyFederatedParticipant(
+    registryContractId: string,
+    participantAddress: string,
+  ): Promise<boolean> {
+    const args = [new Address(participantAddress).toScVal()];
+    const result = await this.readContract(
+      registryContractId,
+      'is_participant',
+      args,
+    );
+    return Boolean(result);
+  }
+
+  /**
+   * Registers a new participant in the federated learning registry contract.
+   * Called during onboarding after off-chain identity checks pass.
+   *
+   * @param registryContractId Federated learning registry contract address
+   * @param participantAddress Participant's Stellar wallet address
+   * @param metadataHash       Hash of participant metadata (never raw data)
+   */
+  async registerFederatedParticipant(
+    registryContractId: string,
+    participantAddress: string,
+    metadataHash: string,
+  ): Promise<string> {
+    const args = [
+      new Address(this.platformKeypair.publicKey()).toScVal(),
+      new Address(participantAddress).toScVal(),
+      nativeToScVal(metadataHash, { type: 'string' }),
+    ];
+    return this.invokeContract(registryContractId, 'register_participant', args);
+  }
+
+  /**
+   * Records a participant's contribution (e.g. a completed training round)
+   * on-chain so rewards can be settled transparently.
+   *
+   * @param registryContractId Federated learning registry contract address
+   * @param participantAddress Participant's Stellar wallet address
+   * @param roundId            Federated learning round identifier
+   * @param contributionScore  Normalized contribution score (0–10_000 bps)
+   */
+  async recordFederatedContribution(
+    registryContractId: string,
+    participantAddress: string,
+    roundId: string,
+    contributionScore: number,
+  ): Promise<string> {
+    const args = [
+      new Address(this.platformKeypair.publicKey()).toScVal(),
+      new Address(participantAddress).toScVal(),
+      nativeToScVal(roundId, { type: 'string' }),
+      nativeToScVal(contributionScore, { type: 'u32' }),
+    ];
+    return this.invokeContract(
+      registryContractId,
+      'record_contribution',
+      args,
+    );
+  }
+
+  /**
+   * Disburses a contribution reward (in USDC stroops) to a participant.
+   *
+   * @param registryContractId Federated learning registry contract address
+   * @param participantAddress Participant's Stellar wallet address
+   * @param usdcToken          USDC asset contract address
+   * @param amountStroops      Reward amount in USDC stroops
+   */
+  async disburseFederatedReward(
+    registryContractId: string,
+    participantAddress: string,
+    usdcToken: string,
+    amountStroops: bigint,
+  ): Promise<string> {
+    if (typeof amountStroops !== 'bigint' || amountStroops <= 0n) {
+      throw new Error('Federated reward amount must be greater than zero');
+    }
+    const args = [
+      new Address(this.platformKeypair.publicKey()).toScVal(),
+      new Address(participantAddress).toScVal(),
+      new Address(usdcToken).toScVal(),
+      nativeToScVal(amountStroops, { type: 'i128' }),
+    ];
+    return this.invokeContract(registryContractId, 'disburse_reward', args);
+  }
+
+  /**
+   * Reads a participant's accumulated contribution score from the registry.
+   */
+  async getFederatedContributionScore(
+    registryContractId: string,
+    participantAddress: string,
+  ): Promise<number> {
+    const args = [new Address(participantAddress).toScVal()];
+    const result = await this.readContract(
+      registryContractId,
+      'get_contribution_score',
+      args,
     );
     return Number(result ?? 0);
   }

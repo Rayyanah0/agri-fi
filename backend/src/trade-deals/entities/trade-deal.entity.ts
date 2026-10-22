@@ -460,4 +460,95 @@ export class TradeDeal {
     example: 'retail',
   })
   minimumTier: AccreditationTier;
+
+  // ESG scoring (#1012)
+  @Column({
+    name: 'esg_score',
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    nullable: true,
+  })
+  @ApiProperty({
+    description: 'Composite ESG score (0-100)',
+    nullable: true,
+    example: 85.5,
+  })
+  esgScore: number | null;
+
+  @Column({
+    name: 'environmental_score',
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    nullable: true,
+  })
+  @ApiProperty({
+    description: 'Environmental pillar sub-score (0-100)',
+    nullable: true,
+  })
+  environmentalScore: number | null;
+
+  @Column({
+    name: 'social_score',
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    nullable: true,
+  })
+  @ApiProperty({
+    description: 'Social pillar sub-score (0-100)',
+    nullable: true,
+  })
+  socialScore: number | null;
+
+  @Column({
+    name: 'governance_score',
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    nullable: true,
+  })
+  @ApiProperty({
+    description: 'Governance pillar sub-score (0-100)',
+    nullable: true,
+  })
+  governanceScore: number | null;
+
+  @Column({ name: 'esg_rating', type: 'varchar', length: 16, nullable: true })
+  @ApiProperty({
+    description: 'Letter rating tier (AAA through CCC)',
+    nullable: true,
+    example: 'AAA',
+  })
+  esgRating: string | null;
+
+  @Column({ name: 'esg_breakdown', type: 'simple-json', nullable: true })
+  @ApiProperty({
+    description: 'Detailed ESG sub-score questionnaire response breakdown',
+    nullable: true,
+  })
+  esgBreakdown: Record<string, any> | null;
+
+  @Column({
+    name: 'esg_status',
+    type: 'varchar',
+    length: 32,
+    default: 'unassessed',
+  })
+  @ApiProperty({
+    description: 'ESG review lifecycle status',
+    enum: ['unassessed', 'pending_review', 'approved', 'rejected'],
+    default: 'unassessed',
+  })
+  esgStatus: string;
+
+  @Column({ name: 'esg_reviewed_by', type: 'uuid', nullable: true })
+  esgReviewedBy: string | null;
+
+  @Column({ name: 'esg_reviewed_at', type: 'timestamptz', nullable: true })
+  esgReviewedAt: Date | null;
+
+  @Column({ name: 'esg_review_notes', type: 'text', nullable: true })
+  esgReviewNotes: string | null;
 }

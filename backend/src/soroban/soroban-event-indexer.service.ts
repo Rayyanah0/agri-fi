@@ -21,7 +21,7 @@ import { Horizon, Networks, rpc } from '@stellar/stellar-sdk';
 import {
   TransactionLog,
   TxStatus,
-} from '../stellar/entities/transaction-log.entity';
+} from '../database/entities/transaction-log.entity';
 import { ShipmentMilestone } from '../shipments/entities/shipment-milestone.entity';
 import { QueueService } from '../queue/queue.service';
 import { TradeDeal } from '../trade-deals/entities/trade-deal.entity';
@@ -538,13 +538,37 @@ export class SorobanEventIndexer implements OnModuleInit, OnModuleDestroy {
     try {
       const { dealId, newStatus } = data;
 
-      // Update deal status
+      // Upsert deal status (idempotent — replaying the same event sets the
+      // same value without creating duplicates).
       await this.dealRepo.update(
         { id: dealId },
         {
           status: newStatus,
         },
       );
+
+      // Discrepancy check (#791): re-read the deal after the update and fire
+      // an alert if the persisted status does not match the on-chain status.
+      const dealAfter = await this.dealRepo.findOne({ where: { id: dealId } });
+      if (dealAfter && dealAfter.status !== newStatus) {
+        this.logger.warn(
+          {
+            dealId,
+            onChainStatus: newStatus,
+            dbStatus: dealAfter.status,
+            txHash,
+          },
+          'Discrepancy detected: database status does not match on-chain status after sync',
+        );
+
+        this.queueService.emit('deal.status.discrepancy', {
+          dealId,
+          onChainStatus: newStatus,
+          dbStatus: dealAfter.status,
+          txHash,
+          timestamp: new Date(),
+        });
+      }
 
       this.logger.info(
         { dealId, newStatus, txHash },

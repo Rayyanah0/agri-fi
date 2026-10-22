@@ -3,7 +3,12 @@ services:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
     environment:
       discovery.type: single-node
-      xpack.security.enabled: "false"
+      # Security is disabled for local development by default. Set
+      # XPACK_SECURITY_ENABLED=true (and ELASTIC_PASSWORD) for secured setups;
+      # see security/setup-security.sh.
+      xpack.security.enabled: "${XPACK_SECURITY_ENABLED:-false}"
+      xpack.security.transport.ssl.enabled: "false"
+      ELASTIC_PASSWORD: "${ELASTIC_PASSWORD:-changeme}"
       ES_JAVA_OPTS: "-Xms512m -Xmx512m"
     ports:
       - "9200:9200"
@@ -14,6 +19,13 @@ services:
     image: fluent/fluentd-kubernetes-daemonset:v1.16-debian-elasticsearch8-1
     depends_on:
       - elasticsearch
+    environment:
+      LOG_ENVIRONMENT: "${LOG_ENVIRONMENT:-development}"
+      ELASTICSEARCH_HOST: "elasticsearch"
+      ELASTICSEARCH_PORT: "9200"
+      ELASTICSEARCH_SCHEME: "${ELASTICSEARCH_SCHEME:-http}"
+      ELASTICSEARCH_USER: "${ELASTICSEARCH_USER:-}"
+      ELASTICSEARCH_PASSWORD: "${ELASTICSEARCH_PASSWORD:-}"
     volumes:
       - ./fluentd.conf:/fluentd/etc/fluent.conf:ro
       - /var/log:/var/log:ro
@@ -22,12 +34,39 @@ services:
       - "24224:24224"
       - "24224:24224/udp"
 
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.15.3
+    depends_on:
+      - elasticsearch
+    environment:
+      LOG_ENVIRONMENT: "${LOG_ENVIRONMENT:-development}"
+      ELASTICSEARCH_HOST: "elasticsearch"
+      ELASTICSEARCH_PORT: "9200"
+      ELASTICSEARCH_SCHEME: "${ELASTICSEARCH_SCHEME:-http}"
+      ELASTICSEARCH_USER: "${ELASTICSEARCH_USER:-}"
+      ELASTICSEARCH_PASSWORD: "${ELASTICSEARCH_PASSWORD:-}"
+      LS_JAVA_OPTS: "-Xms256m -Xmx256m"
+    volumes:
+      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./logstash/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+    ports:
+      - "5044:5044"
+      - "5000:5000"
+
   kibana:
     image: docker.elastic.co/kibana/kibana:8.15.3
     depends_on:
       - elasticsearch
     environment:
       ELASTICSEARCH_HOSTS: "http://elasticsearch:9200"
+      ELASTICSEARCH_USERNAME: "${KIBANA_ELASTICSEARCH_USERNAME:-kibana_system}"
+      ELASTICSEARCH_PASSWORD: "${ELASTIC_PASSWORD:-changeme}"
+      XPACK_SECURITY_ENABLED: "${XPACK_SECURITY_ENABLED:-false}"
+      # 32+ character keys are required to enable Kibana's encrypted features
+      # (alerting, saved-object encryption). Override in production.
+      XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY: "${KIBANA_ENCRYPTION_KEY:-agri-fi-dashboard-encryption-key-32ch}"
+      XPACK_REPORTING_ENCRYPTIONKEY: "${KIBANA_REPORTING_KEY:-agri-fi-reporting-encryption-key-32ch}"
+      XPACK_SECURITY_ENCRYPTIONKEY: "${KIBANA_SECURITY_KEY:-agri-fi-security-encryption-key-32ch}"
     ports:
       - "5601:5601"
 

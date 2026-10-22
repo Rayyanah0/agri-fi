@@ -57,7 +57,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
-  @Throttle({ login: { limit: 5, ttl: 60000 } })
+  @Throttle({ login: {} })
   @ApiOperation({ summary: 'Register a new user' })
   @ApiResponse({ status: 201, description: 'User created successfully' })
   @ApiResponse({ status: 400, description: 'Validation error' })
@@ -76,7 +76,7 @@ export class AuthController {
   }
 
   @Post('login')
-  @Throttle({ login: { limit: 5, ttl: 60000 } })
+  @Throttle({ login: {} })
   @ApiOperation({ summary: 'Authenticate and receive a JWT' })
   @ApiResponse({ status: 200, description: 'Returns access and refresh JWTs' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
@@ -147,7 +147,7 @@ export class AuthController {
   }
 
   @Post('refresh')
-  @Throttle({ login: { limit: 5, ttl: 60000 } })
+  @Throttle({ login: {} })
   @ApiOperation({ summary: 'Exchange a refresh token for a new access token' })
   @ApiResponse({
     status: 200,
@@ -184,7 +184,7 @@ export class AuthController {
   }
 
   @Post('kyc')
-  @Throttle({ kyc: { limit: 3, ttl: 60000 } })
+  @Throttle({ kyc: {} })
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth('jwt')
   @ApiOperation({ summary: 'Submit a KYC document' })
@@ -218,6 +218,7 @@ export class AuthController {
   }
 
   @Post('change-password')
+  @Throttle({ password: {} })
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth('jwt')
   @HttpCode(HttpStatus.OK)
@@ -340,6 +341,7 @@ export class AuthController {
   }
 
   @Post('mfa/verify')
+  @Throttle({ mfa: {} })
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth('jwt')
   @HttpCode(HttpStatus.OK)
@@ -393,7 +395,7 @@ export class AuthController {
 
   @Post('stellar-login')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ login: { limit: 5, ttl: 60000 } })
+  @Throttle({ login: {} })
   @ApiOperation({
     summary:
       'Authenticate via SEP-10 by submitting a signed challenge transaction',

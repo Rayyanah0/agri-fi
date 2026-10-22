@@ -1,7 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useTheme } from "next-themes";
+/**
+ * Theme toggle — issue #1170.
+ *
+ * Cycles through the available colour schemes (light → dark → high contrast →
+ * system) and exposes a settings button that opens the full appearance
+ * panel.
+ */
+
+import { useEffect, useRef, useState } from "react";
+import { useThemePreferences } from "@/components/theme/ThemeProvider";
+import { THEME_VARIANTS, type ThemeVariant } from "@/config/theme";
 
 function SunIcon() {
   return (
@@ -33,39 +42,83 @@ function MoonIcon() {
   );
 }
 
+function ContrastIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
+      <circle cx="12" cy="12" r="8.25" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M12 3.75a8.25 8.25 0 0 1 0 16.5Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function MonitorIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4">
+      <rect x="3" y="4.5" width="18" height="12" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M9 20.25h6M12 16.5v3.75" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+const VARIANT_LABELS: Record<ThemeVariant, string> = {
+  light: "Light",
+  dark: "Dark",
+  "high-contrast": "High contrast",
+  system: "System",
+};
+
 export function ThemeToggle() {
   const [mounted, setMounted] = useState(false);
-  const { resolvedTheme, setTheme } = useTheme();
+  const { preferences, resolvedScheme, setVariant } = useThemePreferences();
+  const liveRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const isDark = resolvedTheme === "dark";
+  // Cycle: light → dark → high-contrast → system → light
+  const cycle = () => {
+    const current = preferences.variant;
+    const index = THEME_VARIANTS.indexOf(current);
+    const next = THEME_VARIANTS[(index + 1) % THEME_VARIANTS.length];
+    setVariant(next);
+  };
+
+  const icon = () => {
+    if (!mounted) {
+      return <span className="h-4 w-4 rounded-full border border-current/30 opacity-60" aria-hidden="true" />;
+    }
+    if (resolvedScheme === "high-contrast") {
+      return <ContrastIcon />;
+    }
+    if (resolvedScheme === "dark") {
+      return <MoonIcon />;
+    }
+    if (preferences.variant === "system") {
+      return <MonitorIcon />;
+    }
+    return <SunIcon />;
+  };
+
+  const label = mounted
+    ? `${VARIANT_LABELS[preferences.variant]} theme — switch theme`
+    : "Theme toggle";
 
   return (
-    <button
-      type="button"
-      onClick={() => setTheme(isDark ? "light" : "dark")}
-      aria-label={mounted ? `Switch to ${isDark ? "light" : "dark"} mode` : "Theme toggle"}
-      aria-pressed={mounted ? isDark : undefined}
-      disabled={!mounted}
-      className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white/90 text-slate-700 shadow-card backdrop-blur transition-all duration-300 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-70 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-900 dark:focus-visible:ring-offset-slate-950"
-    >
-      <span className="relative flex h-4 w-4 items-center justify-center">
-        {!mounted ? (
-          <span className="h-4 w-4 rounded-full border border-current/30 opacity-60" aria-hidden="true" />
-        ) : (
-          <>
-            <span className={`absolute transition-all duration-300 ${isDark ? "scale-0 rotate-90 opacity-0" : "scale-100 rotate-0 opacity-100"}`}>
-              <SunIcon />
-            </span>
-            <span className={`absolute transition-all duration-300 ${isDark ? "scale-100 rotate-0 opacity-100" : "scale-0 -rotate-90 opacity-0"}`}>
-              <MoonIcon />
-            </span>
-          </>
-        )}
-      </span>
-    </button>
+    <div ref={liveRef} className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={cycle}
+        aria-label={label}
+        title={mounted ? VARIANT_LABELS[preferences.variant] : undefined}
+        aria-pressed={mounted ? resolvedScheme === "dark" : undefined}
+        disabled={!mounted}
+        className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-border bg-surface/90 text-foreground shadow-card backdrop-blur transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-70 dark:backdrop-blur"
+      >
+        <span className="relative flex h-4 w-4 items-center justify-center">{icon()}</span>
+      </button>
+    </div>
   );
 }
+
+export default ThemeToggle;

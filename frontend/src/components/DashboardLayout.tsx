@@ -8,6 +8,11 @@ import { Header } from "./navigation/Header";
 import KycStatusBanner from "./dashboard/KycStatusBanner";
 import { DashboardTourWrapper } from "./DashboardTourWrapper";
 import SearchBar from "./SearchBar";
+import CallProvider from "./calling/CallProvider";
+import PredictiveDealForm from "./deals/PredictiveDealForm";
+import { MobileBottomNav } from "./navigation/MobileBottomNav";
+import { MobileOfflineSyncStatus } from "./mobile/MobileOfflineSyncStatus";
+import { MobileQuickDealModal } from "./mobile/MobileQuickDealModal";
 
 /* ── Nav config ───────────────────────────────────────────────────────────── */
 interface NavItem {
@@ -26,6 +31,8 @@ const farmerNav: NavItem[] = [
   },
   { label: "Marketplace", href: "/marketplace", icon: <ShopIcon /> },
   { label: "Referrals", href: "/dashboard/referrals", icon: <ReferralIcon /> },
+  { label: "Board", href: "/dashboard/kanban", icon: <DocsIcon /> },
+  { label: "Calls", href: "/dashboard/calls", icon: <ReferralIcon /> },
 ];
 const traderNav: NavItem[] = [
   {
@@ -36,6 +43,8 @@ const traderNav: NavItem[] = [
   },
   { label: "Marketplace", href: "/marketplace", icon: <ShopIcon /> },
   { label: "Referrals", href: "/dashboard/referrals", icon: <ReferralIcon /> },
+  { label: "Board", href: "/dashboard/kanban", icon: <DocsIcon /> },
+  { label: "Calls", href: "/dashboard/calls", icon: <ReferralIcon /> },
 ];
 const investorNav: NavItem[] = [
   {
@@ -46,6 +55,8 @@ const investorNav: NavItem[] = [
   },
   { label: "Marketplace", href: "/marketplace", icon: <ShopIcon /> },
   { label: "Referrals", href: "/dashboard/referrals", icon: <ReferralIcon /> },
+  { label: "Board", href: "/dashboard/kanban", icon: <DocsIcon /> },
+  { label: "Calls", href: "/dashboard/calls", icon: <ReferralIcon /> },
 ];
 const adminNav: NavItem[] = [
   {
@@ -71,6 +82,8 @@ const adminNav: NavItem[] = [
   },
   { label: "Marketplace", href: "/marketplace", icon: <ShopIcon /> },
   { label: "Referrals", href: "/dashboard/referrals", icon: <ReferralIcon /> },
+  { label: "Board", href: "/dashboard/kanban", icon: <DocsIcon /> },
+  { label: "Calls", href: "/dashboard/calls", icon: <ReferralIcon /> },
 ];
 
 function navForRole(role: string): NavItem[] {
@@ -133,6 +146,7 @@ export default function DashboardLayout({ user, children }: Props) {
   const router = useRouter();
   const pathname = usePathname();
 
+  const [isQuickDealOpen, setIsQuickDealOpen] = useState(false);
   const nav = navForRole(user.role);
   const theme = ROLE_THEME[user.role] ?? ROLE_THEME.farmer;
 
@@ -231,6 +245,21 @@ export default function DashboardLayout({ user, children }: Props) {
           <DocsIcon /> Documents
         </Link>
         <Link
+          href="/dashboard/messages"
+          onClick={onClose}
+          className={
+            isActive({
+              href: "/dashboard/messages",
+              label: "Messages",
+              icon: null,
+            })
+              ? "nav-link-active"
+              : "nav-link"
+          }
+        >
+          <MessageIcon /> Messages
+        </Link>
+        <Link
           href="/settings"
           onClick={onClose}
           className={
@@ -284,13 +313,26 @@ export default function DashboardLayout({ user, children }: Props) {
         </div>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto">
+        <MobileOfflineSyncStatus />
+        <main className="flex-1 overflow-y-auto pb-20 md:pb-6">
           <div className="px-6 pt-6 max-w-7xl mx-auto">
             <KycStatusBanner />
           </div>
-          {children}
+          <CallProvider>
+            {children}
+            {/* Predictive deal creation form (crop/region/route autocomplete,
+                amount suggestions, templates, similarity warnings, batch
+                creation, and suggestion analytics). */}
+            <PredictiveDealForm userId={user.id} />
+          </CallProvider>
         </main>
       </div>
+
+      <MobileBottomNav onOpenQuickDeal={() => setIsQuickDealOpen(true)} />
+      <MobileQuickDealModal
+        isOpen={isQuickDealOpen}
+        onClose={() => setIsQuickDealOpen(false)}
+      />
 
       {/* Interactive onboarding tour for first-time visitors */}
       <DashboardTourWrapper userRole={user.role} />
@@ -380,6 +422,24 @@ function DocsIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
         d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+      />
+    </svg>
+  );
+}
+function MessageIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      className="w-4 h-4"
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"
       />
     </svg>
   );

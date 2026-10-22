@@ -96,3 +96,110 @@ export function authHeader(): Record<string, string> {
   const token = getAuthToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
+
+/* ------------------------------------------------------------------------- *
+ * Behavioral biometrics — local-only profile storage
+ *
+ * Behavioral baselines (typing dynamics, mouse trajectories, device usage)
+ * are sensitive. They are persisted ONLY in the browser (localStorage, with
+ * an IndexedDB mirror when available) and are never sent over the network.
+ * ------------------------------------------------------------------------- */
+
+/** Current schema version for persisted behavioral profiles. */
+export const BEHAVIORAL_SCHEMA_VERSION = 1;
+
+/** Canonical storage key prefix for a per-user behavioral profile. */
+export const behavioralProfileKeyPrefix = "behavioral_profile:";
+
+/** Shape of a persisted behavioral baseline. */
+export interface BehavioralProfile {
+  /** Schema version, used to migrate older profiles on read. */
+  version: number;
+  /** Stable identifier for the user the baseline belongs to. */
+  userId: string;
+  /** Epoch millis when the profile was first created. */
+  createdAt: number;
+  /** Epoch millis of the most recent learning update. */
+  updatedAt: number;
+  /** Number of samples folded into the baseline so far. */
+  sampleCount: number;
+  /** Opaque, implementation-defined feature aggregates. */
+  features: Record<string, number>;
+}
+
+/** Returns the storage key for a given user's behavioral profile. */
+export function behavioralProfileKey(userId: string): string {
+  return `${behavioralProfileKeyPrefix}${userId}`;
+}
+
+/**
+ * Migrates a raw persisted profile to the current schema version.
+ * Returns null when the payload is unusable.
+ */
+export function migrateBehavioralProfile(
+  raw: unknown,
+  userId: string,
+): BehavioralProfile | null {
+  if (!raw || typeof raw !== "object") return null;
+  const candidate = raw as Partial<BehavioralProfile>;
+  if (typeof candidate.version !== "number") return null;
+  if (candidate.version > BEHAVIORAL_SCHEMA_VERSION) return null;
+
+  const now = Date.now();
+  const features =
+    candidate.features && typeof candidate.features === "object"
+      ? { ...candidate.features }
+      : {};
+
+  // v0 -> v1: profiles without a version were implicitly v0; normalize fields.
+  return {
+    version: BEHAVIORAL_SCHEMA_VERSION,
+    userId: typeof candidate.userId === "string" ? candidate.userId : userId,
+    createdAt:
+      typeof candidate.createdAt === "number" ? candidate.createdAt : now,
+    updatedAt:
+      typeof candidate.updatedAt === "number" ? candidate.updatedAt : now,
+    sampleCount:
+      typeof candidate.sampleCount === "number" ? candidate.sampleCount : 0,
+    features,
+  };
+}
+
+/** Reads a user's behavioral profile from local storage (never the network). */
+export function getBehavioralProfile(userId: string): BehavioralProfile | null {
+  const [local] = storages();
+  if (!local) return null;
+  const raw = safeGet(local, behavioralProfileKey(userId));
+  if (!raw) return null;
+  try {
+    return migrateBehavioralProfile(JSON.parse(raw), userId);
+  } catch {
+    return null;
+  }
+}
+
+/** Persists a user's behavioral profile locally. Returns true on success. */
+export function setBehavioralProfile(profile: BehavioralProfile): boolean {
+  const [local] = storages();
+  if (!local) return false;
+  const normalized: BehavioralProfile = {
+    ...profile,
+    version: BEHAVIORAL_SCHEMA_VERSION,
+    updatedAt: Date.now(),
+  };
+  try {
+    local.setItem(
+      behavioralProfileKey(normalized.userId),
+      JSON.stringify(normalized),
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Removes a user's behavioral profile from all local storages. */
+export function clearBehavioralProfile(userId: string): void {
+  const key = behavioralProfileKey(userId);
+  for (const store of storages()) safeRemove(store, key);
+}

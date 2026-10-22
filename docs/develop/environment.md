@@ -139,8 +139,17 @@ The backend is built with NestJS and loads configuration from `.env` files local
 | `ALLOWED_HOSTS` | `string` | `localhost` | No | DNS rebinding protection whitelist of permitted HTTP `Host` header values. | No |
 | `ALLOWED_COUNTRIES` | `string` | `US,GB,GH,KE,NG,TZ` | No | Permitted ISO alpha-2 country codes for trade deals and KYC. | No |
 | `TRUST_PROXY` | `boolean` | `false` | No | Enables Express trust proxy mode when running behind reverse proxy/ingress. | No |
-| `RATE_LIMIT_GLOBAL` | `number` | `100` | No | Default global request rate limit cap per IP. | No |
-| `RATE_LIMIT_TTL` | `number` | `60000` | No | Window duration in milliseconds for rate limiter (default: 60s). | No |
+| `RATE_LIMIT_GLOBAL` | `number` | `100` | No | Global request cap per window. Keyed by JWT `sub` for callers with a verifiable token, by client IP otherwise. | No |
+| `RATE_LIMIT_TTL` | `number` | `60000` | No | Window duration in milliseconds for the global bucket (default: 60s). | No |
+| `RATE_LIMIT_SENSITIVE_TTL` | `number` | `60000` | No | Window duration in milliseconds for the sensitive buckets (`login`, `kyc`, `password`, `mfa`). | No |
+| `RATE_LIMIT_LOGIN_AUTH` | `number` | `10` | No | Requests per window on `/v1/auth` credential routes for a verified user, keyed by `sub`. | No |
+| `RATE_LIMIT_LOGIN_ANON` | `number` | `5` | No | Requests per window on `/v1/auth` credential routes for an anonymous caller, keyed by client IP. | No |
+| `RATE_LIMIT_KYC_AUTH` | `number` | `5` | No | Requests per window on KYC submission routes for a verified user. | No |
+| `RATE_LIMIT_KYC_ANON` | `number` | `3` | No | Requests per window on KYC submission routes for an anonymous caller. | No |
+| `RATE_LIMIT_PASSWORD_AUTH` | `number` | `10` | No | Requests per window on `POST /v1/auth/change-password` for a verified user. | No |
+| `RATE_LIMIT_PASSWORD_ANON` | `number` | `3` | No | Requests per window on `POST /v1/auth/change-password` for an anonymous caller. | No |
+| `RATE_LIMIT_MFA_AUTH` | `number` | `5` | No | Requests per window on `POST /v1/auth/mfa/verify` for a verified user. | No |
+| `RATE_LIMIT_MFA_ANON` | `number` | `3` | No | Requests per window on `POST /v1/auth/mfa/verify` for an anonymous caller. | No |
 | `METRICS_ALLOWED_IPS` | `string` | `127.0.0.1,::1` | No | Comma-separated IP whitelist allowed to scrape `/metrics`. | No |
 | `SWAGGER_USER` | `string` | `admin` | No | HTTP Basic Auth username for `/api/docs`. | No |
 | `SWAGGER_PASS` | `string` | — | **Prod-only** | HTTP Basic Auth password for Swagger API documentation. | **Yes** |

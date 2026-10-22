@@ -1,35 +1,24 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { fetchBackend } from '@/config/backend';
+import { withBackendProxy } from '@/lib/api-proxy';
 
-export async function GET(request: NextRequest) {
-  try {
-    const authHeader = request.headers.get('authorization');
+export const GET = withBackendProxy(async () => ({
+  path: '/users/me',
+  method: 'GET',
+  headers: { 'Content-Type': 'application/json' },
+}));
 
-    const response = await fetchBackend('/users/me', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': authHeader || '',
-      },
-    });
+/**
+ * Updates the authenticated user's profile preferences.
+ *
+ * Used by the theme system (#1170) to synchronise appearance preferences
+ * across devices, and by the settings page to persist the display currency.
+ */
+export const PATCH = withBackendProxy(async (request) => {
+  const body = await request.text();
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      return NextResponse.json(data, { status: response.status });
-    }
-
-    return NextResponse.json(data);
-  } catch (error: any) {
-    if (error?.isBackendUnreachable) {
-      return NextResponse.json(
-        { message: 'Backend service is unavailable' },
-        { status: 503 }
-      );
-    }
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
+  return {
+    path: '/users/me',
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  };
+});

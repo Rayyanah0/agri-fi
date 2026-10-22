@@ -13,6 +13,20 @@ const STATUS_CONFIG: Record<string, { cls: string; dot: string }> = {
   failed:    { cls: 'badge-red',    dot: 'bg-red-500' },
 };
 
+/**
+ * Credit tier of the farmer behind a deal (#1160). The score itself is
+ * the same 300-850 scale the farmer sees on their own profile.
+ */
+const CREDIT_TIER_CONFIG: Record<
+  string,
+  { cls: string; label: string }
+> = {
+  Excellent: { cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', label: 'Excellent credit' },
+  Good:      { cls: 'bg-blue-50 text-blue-700 border-blue-200', label: 'Good credit' },
+  Fair:      { cls: 'bg-amber-50 text-amber-700 border-amber-200', label: 'Fair credit' },
+  Poor:      { cls: 'bg-rose-50 text-rose-700 border-rose-200', label: 'Poor credit' },
+};
+
 // Matches the grid breakpoints the marketplace page renders this card in
 // (1 col on mobile, up to 4 on xl) so the browser fetches an appropriately
 // sized — not just compressed — image at each viewport.
@@ -64,6 +78,9 @@ export default function DealCard({
   const tokensLeft = Math.max(0, Number(deal.token_count) - Math.floor(Number(deal.total_invested) / 100));
   const sc = STATUS_CONFIG[deal.status] ?? STATUS_CONFIG.draft;
   const daysLeft = Math.max(0, Math.ceil((new Date(deal.delivery_date).getTime() - Date.now()) / 86400000));
+  const creditTier = deal.farmer_credit_tier
+    ? CREDIT_TIER_CONFIG[deal.farmer_credit_tier]
+    : undefined;
 
   return (
     <div className="relative">
@@ -113,6 +130,19 @@ export default function DealCard({
 
         {/* Progress */}
         <div className="mt-auto space-y-1.5">
+          {creditTier && deal.farmer_credit_score != null && (
+            <div className="flex items-center justify-between gap-2">
+              <span
+                className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${creditTier.cls}`}
+                title={`Farmer credit score: ${deal.farmer_credit_score}`}
+              >
+                {creditTier.label}
+              </span>
+              <span className="text-[10px] font-semibold text-slate-400 tabular-nums">
+                Score {deal.farmer_credit_score}
+              </span>
+            </div>
+          )}
           <div className="flex justify-between items-center text-xs">
             <span className="text-slate-500 font-medium">
               {formatCurrency(deal.total_invested, 'USD', { decimalPlaces: 0 })} raised

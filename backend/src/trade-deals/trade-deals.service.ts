@@ -7,21 +7,24 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { PinoLogger } from 'nestjs-pino';
 import { TradeDeal, TradeDealStatus } from './entities/trade-deal.entity';
 import { Document, DocumentType } from './entities/document.entity';
 import { ShipmentMilestone } from '../shipments/entities/shipment-milestone.entity';
 import { CreateTradeDealDto } from './dto/create-trade-deal.dto';
 import { User } from '../auth/entities/user.entity';
+import { creditTierForScore, CreditScoreTier } from '../users/credit-score.model';
 import {
   Investment,
   InvestmentStatus,
 } from '../investments/entities/investment.entity';
+import { WatchlistItem } from '../watchlist/entities/watchlist-item.entity';
 import { StellarService } from '../stellar/stellar.service';
 import { QueueService } from '../queue/queue.service';
 import { RiskScoringService } from './risk-scoring.service';
 import { SorobanService } from '../soroban/soroban.service';
+import { DealSuggestionsService } from './deal-suggestions.service';
 
 const VALID_DOC_TYPES: DocumentType[] = [
   'purchase_agreement',
@@ -91,11 +94,135 @@ export class TradeDealsService {
     private readonly stellarService: StellarService,
     private readonly queueService: QueueService,
     private readonly riskScoringService: RiskScoringService,
+    private readonly dealSuggestionsService: DealSuggestionsService,
     @Optional() private readonly sorobanService?: SorobanService,
     private readonly logger: PinoLogger,
     private readonly dataSource: DataSource,
+    @Optional()
+    @InjectRepository(WatchlistItem)
+    private readonly watchlistRepo?: Repository<WatchlistItem>,
   ) {
     this.logger.setContext(TradeDealsService.name);
+  }
+
+  // ---------------------------------------------------------------------------
+  // #1180 — Predictive text & smart suggestions for deal creation
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Predictive text for crop types, regions and shipment routes, derived from
+   * the trader's historical deals.
+   */
+  async getPredictiveSuggestions(
+    traderId: string,
+    field: 'crop' | 'region' | 'route',
+    prefix?: string,
+    limit = 10,
+  ) {
+    return this.dealSuggestionsService.getPredictiveSuggestions(
+      traderId,
+      field,
+      prefix,
+      limit,
+    );
+  }
+
+  /**
+   * Smart amount suggestions based on market prices and historical deals.
+   */
+  async getAmountSuggestions(
+    traderId: string,
+    commodity: string,
+    quantity?: number,
+    region?: string,
+  ) {
+    return this.dealSuggestionsService.getAmountSuggestions(
+      traderId,
+      commodity,
+      quantity,
+      region,
+    );
+  }
+
+  /**
+   * Auto-fill recurring fields (trader details, standard terms) for a new deal.
+   */
+  async getAutoFill(traderId: string, commodity?: string) {
+    return this.dealSuggestionsService.getAutoFill(traderId, commodity);
+  }
+
+  /**
+   * Context-aware real-time validation with suggestions.
+   */
+  async validateDealDraft(traderId: string, draft: Record<string, any>) {
+    return this.dealSuggestionsService.validateDraft(traderId, draft);
+  }
+
+  /**
+   * Record suggestion feedback so the engine can learn from corrections.
+   */
+  async recordSuggestionFeedback(
+    traderId: string,
+    feedback: {
+      field: string;
+      suggestedValue: string;
+      acceptedValue: string;
+      accepted: boolean;
+      timeSavedMs?: number;
+    },
+  ) {
+    return this.dealSuggestionsService.recordFeedback(traderId, feedback);
+  }
+
+  /**
+   * List deal templates available to the trader.
+   */
+  async listDealTemplates(traderId: string) {
+    return this.dealSuggestionsService.listTemplates(traderId);
+  }
+
+  /**
+   * Create a deal template from an existing deal or explicit payload.
+   */
+  async createDealTemplate(
+    traderId: string,
+    payload: { name: string; dealId?: string; fields?: Record<string, any> },
+  ) {
+    return this.dealSuggestionsService.createTemplate(traderId, payload);
+  }
+
+  /**
+   * Detect existing deals similar to the draft (duplicate warning).
+   */
+  async detectSimilarDeals(traderId: string, draft: Record<string, any>) {
+    return this.dealSuggestionsService.detectSimilarDeals(traderId, draft);
+  }
+
+  /**
+   * Batch-create multiple similar deals from a template.
+   */
+  async createDealsFromTemplate(
+    traderId: string,
+    templateId: string,
+    overrides: Record<string, any>[],
+  ): Promise<TradeDeal[]> {
+    const template = await this.dealSuggestionsService.getTemplate(
+      traderId,
+      templateId,
+    );
+    const created: TradeDeal[] = [];
+    for (const override of overrides) {
+      const merged = { ...template.fields, ...override } as CreateTradeDealDto;
+      created.push(await this.createDeal(traderId, merged));
+    }
+    return created;
+  }
+
+  /**
+   * Suggestion analytics: acceptance rate and estimated time saved.
+   */
+  async getSuggestionAnalytics(traderId: string) {
+    return this.dealSuggestionsService.getAnalytics(traderId);
   }
 
   async updateDealStatus(
@@ -197,6 +324,16 @@ export class TradeDealsService {
 
     const saved = await this.tradeDealRepo.save(savedDeal);
 
+    // #1180 — feed the deal into the suggestion learning engine (non-blocking)
+    this.dealSuggestionsService
+      .learnFromDeal(effectiveTraderId, saved)
+      .catch((err) => {
+        this.logger.warn(
+          { dealId: saved.id, error: err.message },
+          'Failed to learn from created deal',
+        );
+      });
+
     // #828 — compute initial risk score (non-blocking)
     this.riskScoringService.computeAndPersist(saved.id).catch((err) => {
       this.logger.warn(
@@ -225,6 +362,8 @@ export class TradeDealsService {
     q?: string;
     page?: number;
     limit?: number;
+    /** Marks rows this viewer has starred (#1003). */
+    viewerId?: string;
   }): Promise<{ data: any[]; total: number; page: number; limit: number }> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 12;
@@ -400,6 +539,13 @@ export class TradeDealsService {
     }
 
     const [deals, total] = await qb.getManyAndCount();
+    const watchedIds = await this.watchedDealIds(
+      query.viewerId,
+      deals.map((deal) => deal.id),
+    );
+    const farmerCredits = await this.farmerCreditScores(
+      deals.map((deal) => deal.farmerId),
+    );
 
     return {
       data: deals.map((deal) => ({
@@ -430,11 +576,67 @@ export class TradeDealsService {
         risk_rating: deal.riskRating,
         min_lot_size: Number(deal.minLotSize),
         lot_step: Number(deal.lotStep),
+        watched: watchedIds.has(deal.id),
+        // #1160 — the credit standing of the farmer behind the deal.
+        farmer_credit_score: farmerCredits.get(deal.farmerId)?.score ?? null,
+        farmer_credit_tier: farmerCredits.get(deal.farmerId)?.tier ?? null,
       })),
       total,
       page,
       limit,
     };
+  }
+
+  /**
+   * Credit scores and tiers for the farmers behind a page of deals (#1160).
+   *
+   * Read in one query so the marketplace listing stays a single round trip
+   * for the farmers on the page.
+   */
+  private async farmerCreditScores(
+    farmerIds: readonly string[],
+  ): Promise<Map<string, { score: number; tier: CreditScoreTier }>> {
+    const unique = [...new Set(farmerIds.filter(Boolean))];
+    if (unique.length === 0) {
+      return new Map();
+    }
+
+    const farmers = await this.userRepo.find({
+      where: { id: In(unique) },
+      select: { id: true, creditScore: true },
+    });
+
+    const scores = new Map<string, { score: number; tier: CreditScoreTier }>();
+    for (const farmer of farmers) {
+      if (farmer.creditScore === null || farmer.creditScore === undefined) {
+        continue;
+      }
+      scores.set(farmer.id, {
+        score: farmer.creditScore,
+        tier: creditTierForScore(farmer.creditScore),
+      });
+    }
+    return scores;
+  }
+
+  /**
+   * Which of `dealIds` the viewer has starred. Reads `watchlist_item` through
+   * its own repository instead of importing WatchlistModule: that module is
+   * downstream of AuthModule, which already reaches TradeDealsModule, so an
+   * import would create a circular module graph.
+   */
+  private async watchedDealIds(
+    viewerId: string | undefined,
+    dealIds: readonly string[],
+  ): Promise<Set<string>> {
+    if (!viewerId || !this.watchlistRepo || dealIds.length === 0) {
+      return new Set();
+    }
+    const rows = await this.watchlistRepo.find({
+      where: { userId: viewerId, dealId: In([...dealIds]) },
+      select: { dealId: true },
+    });
+    return new Set(rows.map((row) => row.dealId));
   }
 
   async findOne(
@@ -496,6 +698,12 @@ export class TradeDealsService {
       risk_score: deal.riskScore,
       risk_rating: deal.riskRating,
       risk_breakdown: deal.riskBreakdown,
+      // #1160 — the credit standing of the farmer behind the deal.
+      farmer_credit_score: deal.farmer?.creditScore ?? null,
+      farmer_credit_tier:
+        deal.farmer?.creditScore === null || deal.farmer?.creditScore === undefined
+          ? null
+          : creditTierForScore(deal.farmer.creditScore),
       // #835 — lot sizing exposed to the investment form
       min_lot_size: Number(deal.minLotSize),
       lot_step: Number(deal.lotStep),

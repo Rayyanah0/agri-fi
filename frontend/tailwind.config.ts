@@ -6,6 +6,9 @@ const config: Config = {
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
     './src/app/**/*.{js,ts,jsx,tsx,mdx}',
   ],
+  // #1170 — dark utilities follow the `dark` class that next-themes writes on
+  // <html>, so the user's explicit choice always wins over the OS preference.
+  darkMode: ['class'],
   theme: {
     extend: {
       fontFamily: {
@@ -32,6 +35,26 @@ const config: Config = {
         border: 'hsl(var(--color-border) / <alpha-value>)',
         foreground: 'hsl(var(--color-text) / <alpha-value>)',
         'muted-foreground': 'hsl(var(--color-muted-text) / <alpha-value>)',
+        success: {
+          DEFAULT: 'hsl(var(--color-success) / <alpha-value>)',
+          foreground: 'hsl(var(--color-success-foreground) / <alpha-value>)',
+          muted: 'hsl(var(--color-success-muted) / <alpha-value>)',
+        },
+        warning: {
+          DEFAULT: 'hsl(var(--color-warning) / <alpha-value>)',
+          foreground: 'hsl(var(--color-warning-foreground) / <alpha-value>)',
+          muted: 'hsl(var(--color-warning-muted) / <alpha-value>)',
+        },
+        danger: {
+          DEFAULT: 'hsl(var(--color-danger) / <alpha-value>)',
+          foreground: 'hsl(var(--color-danger-foreground) / <alpha-value>)',
+          muted: 'hsl(var(--color-danger-muted) / <alpha-value>)',
+        },
+        info: {
+          DEFAULT: 'hsl(var(--color-info) / <alpha-value>)',
+          foreground: 'hsl(var(--color-info-foreground) / <alpha-value>)',
+          muted: 'hsl(var(--color-info-muted) / <alpha-value>)',
+        },
         brand: {
           50:  '#f0fdf4',
           100: '#dcfce7',

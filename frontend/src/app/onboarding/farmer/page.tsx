@@ -21,6 +21,15 @@ interface FarmData {
   farmingType: string;
 }
 
+// #1156 — KYC step data
+interface KycData {
+  documentType: string;
+  documentNumber: string;
+  documentFile: File | null;
+  selfieFile: File | null;
+  addressProofFile: File | null;
+}
+
 interface WalletData {
   walletAddress: string;
   walletProvider: string;
@@ -29,6 +38,7 @@ interface WalletData {
 const STEPS = [
   { id: 'profile', title: 'Profile', description: 'Personal information' },
   { id: 'farm', title: 'Farm Details', description: 'Farm location and crops' },
+  { id: 'kyc', title: 'KYC Verification', description: 'Identity documents' },
   { id: 'wallet', title: 'Wallet Setup', description: 'Connect your wallet' },
 ];
 
@@ -53,6 +63,14 @@ export default function FarmerOnboardingPage() {
     location: '',
     primaryCrops: '',
     farmingType: '',
+  });
+
+  const [kycData, setKycData] = useState<KycData>({
+    documentType: '',
+    documentNumber: '',
+    documentFile: null,
+    selfieFile: null,
+    addressProofFile: null,
   });
 
   const [walletData, setWalletData] = useState<WalletData>({
@@ -80,6 +98,13 @@ export default function FarmerOnboardingPage() {
     }
 
     if (step === 2) {
+      if (!kycData.documentType) newErrors.documentType = 'Document type is required';
+      if (!kycData.documentNumber.trim()) newErrors.documentNumber = 'Document number is required';
+      if (!kycData.documentFile) newErrors.documentFile = 'ID document is required';
+      if (!kycData.selfieFile) newErrors.selfieFile = 'Selfie photo is required';
+    }
+
+    if (step === 3) {
       if (!walletData.walletAddress.trim()) newErrors.walletAddress = 'Wallet address is required';
     }
 
@@ -103,7 +128,6 @@ export default function FarmerOnboardingPage() {
   const handleSaveAndExit = async () => {
     setLoading(true);
     try {
-      // Save progress to localStorage or API
       const onboardingData = {
         step: currentStep,
         profileData,
@@ -126,7 +150,6 @@ export default function FarmerOnboardingPage() {
     if (!validateStep(currentStep)) return;
     setLoading(true);
     try {
-      // Submit complete onboarding data to API
       const completeData = {
         profileData,
         farmData,
@@ -374,8 +397,161 @@ export default function FarmerOnboardingPage() {
             </div>
           )}
 
-          {/* Step 2: Wallet Setup */}
+          {/* Step 2: KYC Verification (#1156) */}
           {currentStep === 2 && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 mb-2">KYC Verification</h2>
+                <p className="text-slate-500 text-sm">
+                  Upload your identity documents for compliance verification. Processing typically
+                  takes 1–2 business days.
+                </p>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <p className="text-sm text-amber-800">
+                  <strong>Why do we need this?</strong> Regulatory compliance requires identity
+                  verification before you can receive payments or list trade deals.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="label">Document Type</label>
+                  <select
+                    className="input"
+                    value={kycData.documentType}
+                    onChange={(e) => setKycData({ ...kycData, documentType: e.target.value })}
+                  >
+                    <option value="">Select document type</option>
+                    <option value="national_id">National ID Card</option>
+                    <option value="passport">International Passport</option>
+                    <option value="drivers_license">Driver's License</option>
+                    <option value="voter_card">Voter's Card</option>
+                  </select>
+                  {errors.documentType && (
+                    <p className="text-xs text-red-600 mt-1">{errors.documentType}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="label">Document Number</label>
+                  <input
+                    className="input"
+                    type="text"
+                    value={kycData.documentNumber}
+                    onChange={(e) => setKycData({ ...kycData, documentNumber: e.target.value })}
+                    placeholder="A12345678"
+                  />
+                  {errors.documentNumber && (
+                    <p className="text-xs text-red-600 mt-1">{errors.documentNumber}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="label">ID Document (front &amp; back)</label>
+                  <div
+                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
+                      kycData.documentFile
+                        ? 'border-green-400 bg-green-50'
+                        : 'border-slate-300 hover:border-brand-400'
+                    }`}
+                    onClick={() => document.getElementById('doc-upload')?.click()}
+                  >
+                    {kycData.documentFile ? (
+                      <p className="text-sm text-green-700 font-medium">
+                        ✓ {kycData.documentFile.name}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-slate-500">
+                        Click to upload ID document (JPG, PNG, or PDF · max 5 MB)
+                      </p>
+                    )}
+                    <input
+                      id="doc-upload"
+                      type="file"
+                      className="hidden"
+                      accept=".jpg,.jpeg,.png,.pdf"
+                      onChange={(e) =>
+                        setKycData({ ...kycData, documentFile: e.target.files?.[0] ?? null })
+                      }
+                    />
+                  </div>
+                  {errors.documentFile && (
+                    <p className="text-xs text-red-600 mt-1">{errors.documentFile}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="label">Selfie with Document</label>
+                  <div
+                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
+                      kycData.selfieFile
+                        ? 'border-green-400 bg-green-50'
+                        : 'border-slate-300 hover:border-brand-400'
+                    }`}
+                    onClick={() => document.getElementById('selfie-upload')?.click()}
+                  >
+                    {kycData.selfieFile ? (
+                      <p className="text-sm text-green-700 font-medium">
+                        ✓ {kycData.selfieFile.name}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-slate-500">
+                        Click to upload selfie holding your ID (JPG or PNG · max 5 MB)
+                      </p>
+                    )}
+                    <input
+                      id="selfie-upload"
+                      type="file"
+                      className="hidden"
+                      accept=".jpg,.jpeg,.png"
+                      onChange={(e) =>
+                        setKycData({ ...kycData, selfieFile: e.target.files?.[0] ?? null })
+                      }
+                    />
+                  </div>
+                  {errors.selfieFile && (
+                    <p className="text-xs text-red-600 mt-1">{errors.selfieFile}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="label">Address Proof <span className="text-slate-400 font-normal">(optional)</span></label>
+                  <div
+                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
+                      kycData.addressProofFile
+                        ? 'border-green-400 bg-green-50'
+                        : 'border-slate-300 hover:border-brand-400'
+                    }`}
+                    onClick={() => document.getElementById('address-upload')?.click()}
+                  >
+                    {kycData.addressProofFile ? (
+                      <p className="text-sm text-green-700 font-medium">
+                        ✓ {kycData.addressProofFile.name}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-slate-500">
+                        Utility bill or bank statement (JPG, PNG, or PDF · max 5 MB)
+                      </p>
+                    )}
+                    <input
+                      id="address-upload"
+                      type="file"
+                      className="hidden"
+                      accept=".jpg,.jpeg,.png,.pdf"
+                      onChange={(e) =>
+                        setKycData({ ...kycData, addressProofFile: e.target.files?.[0] ?? null })
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Wallet Setup */}
+          {currentStep === 3 && (
             <div className="space-y-6">
               <div>
                 <h2 className="text-xl font-bold text-slate-900 mb-2">Wallet Setup</h2>

@@ -1,0 +1,82 @@
+[
+  {
+    "name": "Agri-Fi — high error rate (5m)",
+    "rule_type_id": ".index-threshold",
+    "consumer": "alerts",
+    "schedule": { "interval": "5m" },
+    "tags": ["agri-fi", "logging", "errors"],
+    "notify_when": "onActionGroupChange",
+    "params": {
+      "index": ["agri-fi-logs*"],
+      "timeField": "@timestamp",
+      "aggType": "count",
+      "groupBy": "all",
+      "termSize": 5,
+      "threshold": [100],
+      "thresholdComparator": ">",
+      "timeWindowSize": 5,
+      "timeWindowUnit": "m",
+      "filterKuery": "level : (error or fatal)"
+    }
+  },
+  {
+    "name": "Agri-Fi — authentication failure spike (5m)",
+    "rule_type_id": ".index-threshold",
+    "consumer": "alerts",
+    "schedule": { "interval": "5m" },
+    "tags": ["agri-fi", "logging", "security"],
+    "notify_when": "onActionGroupChange",
+    "params": {
+      "index": ["agri-fi-logs*"],
+      "timeField": "@timestamp",
+      "aggType": "count",
+      "groupBy": "all",
+      "termSize": 5,
+      "threshold": [20],
+      "thresholdComparator": ">",
+      "timeWindowSize": 5,
+      "timeWindowUnit": "m",
+      "filterKuery": "msg : (unauthorized or \"invalid credentials\" or forbidden)"
+    }
+  },
+  {
+    "name": "Agri-Fi — escrow/payment processing errors (5m)",
+    "rule_type_id": ".index-threshold",
+    "consumer": "alerts",
+    "schedule": { "interval": "5m" },
+    "tags": ["agri-fi", "logging", "payments"],
+    "notify_when": "onActionGroupChange",
+    "params": {
+      "index": ["agri-fi-logs*"],
+      "timeField": "@timestamp",
+      "aggType": "count",
+      "groupBy": "all",
+      "termSize": 5,
+      "threshold": [5],
+      "thresholdComparator": ">",
+      "timeWindowSize": 5,
+      "timeWindowUnit": "m",
+      "filterKuery": "level : (error or fatal) and (context : Escrow or context : Settlement)"
+    }
+  },
+  {
+    "name": "Agri-Fi — log ingestion stopped (10m)",
+    "rule_type_id": ".index-threshold",
+    "consumer": "alerts",
+    "schedule": { "interval": "10m" },
+    "tags": ["agri-fi", "logging", "availability"],
+    "notify_when": "onActionGroupChange",
+    "params": {
+      "index": ["agri-fi-logs*"],
+      "timeField": "@timestamp",
+      "aggType": "count",
+      "groupBy": "all",
+      "termSize": 5,
+      "threshold": [1],
+      "thresholdComparator": "<",
+      "timeWindowSize": 10,
+      "timeWindowUnit": "m",
+      "filterKuery": ""
+    }
+  }
+]

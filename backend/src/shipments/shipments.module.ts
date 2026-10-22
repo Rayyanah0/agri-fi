@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ShipmentsService } from './shipments.service';
 import { ShipmentsController } from './shipments.controller';
-import { ShipmentMilestone } from './entities/shipment-milestone.entity';
-import { ShipmentSensorReading } from './entities/shipment-sensor-reading.entity';
+import { ShipmentsService } from './shipments.service';
 import { SensorReadingsService } from './sensor-readings.service';
+import { ShipmentMilestone } from './entities/shipment-milestone.entity';
+import { MilestoneComment } from './entities/milestone-comment.entity';
+import { MilestoneVerification } from './entities/milestone-verification.entity';
+import { ShipmentSensorReading } from './entities/shipment-sensor-reading.entity';
 import { TradeDeal } from '../trade-deals/entities/trade-deal.entity';
 import { QueueModule } from '../queue/queue.module';
 
@@ -12,12 +14,15 @@ import { QueueModule } from '../queue/queue.module';
   imports: [
     TypeOrmModule.forFeature([
       ShipmentMilestone,
+      MilestoneComment,
+      MilestoneVerification,
       ShipmentSensorReading,
       TradeDeal,
     ]),
     QueueModule,
   ],
-  providers: [ShipmentsService, SensorReadingsService],
   controllers: [ShipmentsController],
+  providers: [ShipmentsService, SensorReadingsService],
+  exports: [ShipmentsService],
 })
 export class ShipmentsModule {}

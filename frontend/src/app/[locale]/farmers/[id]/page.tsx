@@ -14,6 +14,8 @@ interface PublicUserProfile {
   kycStatus: 'pending' | 'verified' | 'rejected' | 'expired';
   walletAddress: string | null;
   creditScore: number | null;
+  /** Credit tier derived server-side from the score (#1160) */
+  creditTier: 'Excellent' | 'Good' | 'Fair' | 'Poor' | null;
   createdAt: string;
   dealsCompleted: number;
   activeDeals: number;
@@ -184,15 +186,11 @@ export default async function FarmerProfilePage({
   const repLabel = reputationLabel(profile.reputationScore, t);
   const repColour = reputationColour(profile.reputationScore);
 
-  // Compute FICO-like tier label from creditScore
-  const creditTier =
-    profile.creditScore !== null
-      ? profile.creditScore >= 700
-        ? t('creditTier.excellent')
-        : profile.creditScore >= 500
-          ? t('creditTier.good')
-          : t('creditTier.fair')
-      : null;
+  // The credit tier is derived server-side from the score (#1160) so the
+  // thresholds only live in one place.
+  const creditTier = profile.creditTier
+    ? t(`creditTier.${profile.creditTier.toLowerCase()}`)
+    : null;
 
   // Active deals — build placeholder cards (real data fetched by deal count)
   // We only have counts here; for full card detail a separate endpoint would

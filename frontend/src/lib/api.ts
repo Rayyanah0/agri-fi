@@ -1,6 +1,8 @@
 import { getAuthToken, setAuthToken, clearAuthToken } from "./auth-token";
+import { captureTraceId, traceHeaders } from "./tracing";
 
-const API_BASE = "http://localhost:3001";
+export const API_BASE =
+  (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001").replace(/\/+$/, "");
 const API_VERSION = "/v1";
 
 // ── Public (no-auth) fetch helper — used by ActivityFeed and other public endpoints ──
@@ -9,9 +11,10 @@ export async function apiFetchPublic<T>(path: string): Promise<T> {
     ? path
     : `${API_VERSION}${path}`;
   const res = await fetch(`${API_BASE}${versionedPath}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: traceHeaders({ "Content-Type": "application/json" }),
     cache: "no-store",
   });
+  captureTraceId(res);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     const err: any = new Error(body?.message ?? res.statusText);
@@ -103,17 +106,74 @@ export interface Deal {
   esg_rating?: string | null;
   esg_status?: string | null;
   esg_breakdown?: Record<string, any> | null;
+  /** Credit score of the farmer behind the deal (#1160) */
+  farmer_credit_score?: number | null;
+  /** Credit tier of the farmer behind the deal (#1160) */
+  farmer_credit_tier?: CreditScoreTier | null;
 }
+
+/** One month of a farmer's credit score history (#1160) */
+export interface CreditScoreHistoryPoint {
+  month: string;
+  score: number;
+  tier: CreditScoreTier;
+  maxDealSizeUsdc: number;
+  change: number | null;
+}
+
+/** A farmer's standing against the farmers in their country (#1160) */
+export interface CreditScoreBenchmark {
+  country: string;
+  peerCount: number;
+  averageScore: number;
+  medianScore: number;
+  percentile: number;
+  score: number | null;
+  tier: CreditScoreTier | null;
+  tierDistribution: Record<CreditScoreTier, number>;
+}
+
+/** A farmer's challenge to their credit score (#1160) */
+export interface CreditScoreDispute {
+  id: string;
+  userId: string;
+  disputedScore: number;
+  reason: string;
+  factor: string | null;
+  status: "open" | "under_review" | "resolved" | "rejected";
+  resolution: string | null;
+  correctedScore: number | null;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A deal recommended because of the credit standing of its farmer (#1160) */
+export interface CreditInvestmentRecommendation {
+  dealId: string;
+  commodity: string;
+  totalValue: number;
+  expectedRoi: number | null;
+  farmerCreditScore: number;
+  farmerCreditTier: CreditScoreTier;
+  maxDealSizeUsdc: number;
+  rationale: string;
+}
+
+export type CreditScoreTier = "Excellent" | "Good" | "Fair" | "Poor";
 
 export interface CreditScoreDisclosure {
   score: number;
-  tier: "Excellent" | "Good" | "Fair" | "Poor";
+  tier: CreditScoreTier;
   maxDealSizeUsdc: number;
   factors: {
     onTimeRepaymentRate: number;
     dealCompletionRate: number;
     dealDefaultRate: number;
     shipmentMilestoneComplianceRate: number;
+    shipmentAccuracyRate: number;
+    documentQualityRate: number;
     kycVerificationAgeDays: number;
   };
   breakdown: Record<
@@ -149,6 +209,35 @@ export interface Investment {
   deal: Deal;
   stellar_tx_id?: string | null;
   soroban_contract_id?: string | null;
+}
+
+/** One slice of the allocation-by-deal breakdown (#789). */
+export interface PortfolioAllocationSlice {
+  deal_id: string;
+  title: string;
+  token_symbol: string | null;
+  commodity: string | null;
+  deal_status: string | null;
+  amount_usd: number;
+  share_pct: number;
+  expected_return_usd: number;
+  realized_return_usd: number | null;
+  position_count: number;
+}
+
+export interface PortfolioSummary {
+  investor_id: string;
+  currency: "USD";
+  total_invested: number;
+  current_value: number;
+  expected_returns: number;
+  returns_paid: number;
+  roi_pct: number;
+  active_deal_count: number;
+  invested_deal_count: number;
+  position_count: number;
+  allocation: PortfolioAllocationSlice[];
+  generated_at: string;
 }
 
 interface PaginatedResponse<T> {
@@ -301,13 +390,16 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_BASE}${versionedPath}`, {
     ...init,
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
+    headers: traceHeaders({
+      ...(typeof FormData !== "undefined" && init.body instanceof FormData
+        ? {}
+        : { "Content-Type": "application/json" }),
       ...authHeaders(),
-      ...(init.headers ?? {}),
-    },
+      ...((init.headers as Record<string, string>) ?? {}),
+    }),
     cache: "no-store",
   });
+  captureTraceId(res);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     const err: any = new Error(body?.message ?? res.statusText);
@@ -317,7 +409,69 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   return res.json();
 }
 
+async function apiBlob(path: string): Promise<Blob> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
+    headers: authHeaders(),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.message ?? res.statusText);
+  }
+  return res.blob();
+}
+
 // ── Stateful API client (used by dashboard / login pages) ────────────────────
+
+export interface ChatParticipant {
+  userId: string;
+  email?: string;
+  role?: User["role"];
+  lastReadAt?: string | null;
+  self?: boolean;
+}
+
+export interface ChatAttachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  downloadUrl: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  senderEmail?: string;
+  content: string;
+  replyToId: string | null;
+  replyTo: { id: string; content: string; senderEmail?: string } | null;
+  reactions: Record<string, string[]>;
+  createdAt: string;
+  readBy: string[];
+  attachments: ChatAttachment[];
+}
+
+export interface ChatConversation {
+  id: string;
+  kind: "direct" | "group";
+  name: string | null;
+  dealId: string | null;
+  createdAt: string;
+  participants: ChatParticipant[];
+  lastMessage?: ChatMessage | null;
+  unreadCount?: number;
+}
+
+export interface ChatAnalytics {
+  periodDays: number;
+  conversationCount: number;
+  sent: number;
+  received: number;
+  dailyActivity: Array<{ day: string; sent: number; received: number }>;
+}
 
 export const apiClient = {
   /** Call POST /auth/login, store the returned JWT, and return the token. */
@@ -415,6 +569,11 @@ export const apiClient = {
     return unwrapPaginated(response).map(normalizeInvestment);
   },
 
+  // GET /investments/summary — portfolio totals and per-deal allocation (#789)
+  async getPortfolioSummary(): Promise<PortfolioSummary> {
+    return apiFetch<PortfolioSummary>("/investments/summary");
+  },
+
   // POST /shipments/milestones  — trade_deal_id + milestone + notes in body
   async recordMilestone(
     dealId: string,
@@ -468,6 +627,47 @@ export const apiClient = {
     return apiFetch("/users/me/credit-score");
   },
 
+  // GET /credit-scoring/me/history — monthly credit score evolution (#1160)
+  async getCreditScoreHistory(months = 12): Promise<CreditScoreHistoryPoint[]> {
+    return apiFetch(`/credit-scoring/me/history?months=${months}`);
+  },
+
+  // GET /credit-scoring/me/benchmark — regional peer comparison (#1160)
+  async getCreditScoreBenchmark(): Promise<CreditScoreBenchmark> {
+    return apiFetch("/credit-scoring/me/benchmark");
+  },
+
+  // GET /credit-scoring/me/disputes — the farmer's disputes (#1160)
+  async getCreditScoreDisputes(): Promise<CreditScoreDispute[]> {
+    return apiFetch("/credit-scoring/me/disputes");
+  },
+
+  // POST /credit-scoring/me/disputes — file a dispute (#1160)
+  async fileCreditScoreDispute(input: {
+    reason: string;
+    factor?: string;
+  }): Promise<CreditScoreDispute> {
+    return apiFetch("/credit-scoring/me/disputes", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  // GET /credit-scoring/investment-recommendations — credit-ranked deals (#1160)
+  async getCreditInvestmentRecommendations(
+    minTier?: CreditScoreTier,
+    limit = 10,
+  ): Promise<{
+    minTier: CreditScoreTier;
+    count: number;
+    recommendations: CreditInvestmentRecommendation[];
+  }> {
+    const tier = minTier ? `&minTier=${encodeURIComponent(minTier)}` : "";
+    return apiFetch(
+      `/credit-scoring/investment-recommendations?limit=${limit}${tier}`,
+    );
+  },
+
   // POST /trade-deals/:id/esg-questionnaire — ESG impact scoring (#1012)
   async submitEsgQuestionnaire(dealId: string, data: any): Promise<Deal> {
     return apiFetch(`/trade-deals/${dealId}/esg-questionnaire`, {
@@ -480,7 +680,119 @@ export const apiClient = {
   async getDealEsgScore(dealId: string): Promise<any> {
     return apiFetch(`/trade-deals/${dealId}/esg-score`);
   },
+
+  getChatConversations(): Promise<ChatConversation[]> {
+    return apiFetch("/chat/conversations");
+  },
+
+  createChatConversation(input: {
+    participantIds: string[];
+    name?: string;
+    dealId?: string;
+  }): Promise<ChatConversation> {
+    return apiFetch("/chat/conversations", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  searchChatContacts(query: string): Promise<Array<Pick<User, "id" | "email" | "role">>> {
+    return apiFetch(`/chat/contacts?q=${encodeURIComponent(query)}`);
+  },
+
+  getChatMessages(conversationId: string): Promise<ChatMessage[]> {
+    return apiFetch(`/chat/conversations/${encodeURIComponent(conversationId)}/messages`);
+  },
+
+  searchChatMessages(conversationId: string, query: string): Promise<ChatMessage[]> {
+    return apiFetch(
+      `/chat/conversations/${encodeURIComponent(conversationId)}/search?q=${encodeURIComponent(query)}`,
+    );
+  },
+
+  sendChatMessage(
+    conversationId: string,
+    content: string,
+    replyToId?: string,
+  ): Promise<ChatMessage> {
+    return apiFetch(`/chat/conversations/${encodeURIComponent(conversationId)}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ content, replyToId }),
+    });
+  },
+
+  markChatRead(conversationId: string): Promise<{ lastReadAt: string }> {
+    return apiFetch(`/chat/conversations/${encodeURIComponent(conversationId)}/read`, {
+      method: "POST",
+      body: "{}",
+    });
+  },
+
+  reactToChatMessage(messageId: string, emoji: string): Promise<ChatMessage> {
+    return apiFetch(`/chat/messages/${encodeURIComponent(messageId)}/reactions`, {
+      method: "POST",
+      body: JSON.stringify({ emoji }),
+    });
+  },
+
+  uploadChatAttachment(conversationId: string, file: File): Promise<ChatMessage> {
+    const form = new FormData();
+    form.append("file", file);
+    return apiFetch(
+      `/chat/conversations/${encodeURIComponent(conversationId)}/attachments`,
+      { method: "POST", body: form },
+    );
+  },
+
+  downloadChatAttachment(downloadUrl: string): Promise<Blob> {
+    return apiBlob(downloadUrl);
+  },
+
+  getChatAnalytics(): Promise<ChatAnalytics> {
+    return apiFetch("/chat/analytics");
+  },
+
+  // POST /auth/behavioral/risk — submit only the computed risk score and
+  // anomaly flags. Raw behavioral data (keystroke/mouse/usage samples) never
+  // leaves the device; only derived, non-reversible signals are sent.
+  async submitBehavioralRisk(payload: {
+    riskScore: number;
+    anomalyFlags: string[];
+    confidence?: number;
+    sampledAt?: string;
+  }): Promise<{ riskScore: number; action: "allow" | "challenge" | "block" }> {
+    return apiFetch("/auth/behavioral/risk", {
+      method: "POST",
+      body: JSON.stringify({
+        riskScore: payload.riskScore,
+        anomalyFlags: payload.anomalyFlags,
+        confidence: payload.confidence,
+        sampledAt: payload.sampledAt ?? new Date().toISOString(),
+      }),
+    });
+  },
+
+  // GET /auth/behavioral/analytics — behavioral authentication accuracy and
+  // false-positive metrics for the current user.
+  async getBehavioralAnalytics(): Promise<BehavioralAnalytics> {
+    return apiFetch("/auth/behavioral/analytics");
+  },
 };
+
+export interface BehavioralAnalytics {
+  periodDays: number;
+  totalSamples: number;
+  truePositives: number;
+  falsePositives: number;
+  trueNegatives: number;
+  falseNegatives: number;
+  accuracy: number;
+  falsePositiveRate: number;
+  averageRiskScore: number;
+  anomalyCount: number;
+  challengesIssued: number;
+  lastUpdated: string;
+}
 
 // ── Public marketplace helpers ────────────────────────────────────────────────
 

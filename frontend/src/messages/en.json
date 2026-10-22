@@ -413,7 +413,8 @@
     "creditTier": {
       "excellent": "Excellent",
       "good": "Good",
-      "fair": "Fair"
+      "fair": "Fair",
+      "poor": "Needs improvement"
     },
     "activeDeals": {
       "heading": "Active Deals",
@@ -479,5 +480,66 @@
       "finish": "Get Started"
     },
     "restart": "Restart Tour"
+  }
+,
+  "theme": {
+    "title": "Appearance",
+    "description": "Customise the colour scheme, brand colours, text size and contrast.",
+    "preview": {
+      "title": "Preview",
+      "label": "Preview of the selected theme",
+      "hint": "Changes are applied to the preview first. Use Apply to keep them."
+    },
+    "scheme": {
+      "label": "Colour scheme",
+      "light": "Light",
+      "dark": "Dark",
+      "high-contrast": "High contrast",
+      "system": "System",
+      "systemLight": "Following your device: light appearance.",
+      "systemDark": "Following your device: dark appearance."
+    },
+    "accent": {
+      "label": "Brand colours",
+      "emerald": "Emerald",
+      "teal": "Teal",
+      "blue": "Blue",
+      "indigo": "Indigo",
+      "violet": "Violet",
+      "amber": "Amber",
+      "rose": "Rose",
+      "slate": "Slate",
+      "customBrand": "Custom brand colour",
+      "customAccent": "Custom accent colour",
+      "apply": "Apply",
+      "hint": "Enter an HSL triplet such as 142 50% 24%."
+    },
+    "fontSize": {
+      "label": "Text size",
+      "small": "Small",
+      "medium": "Medium",
+      "large": "Large",
+      "extra-large": "Extra large"
+    },
+    "contrast": {
+      "label": "Contrast",
+      "normal": "Normal",
+      "high": "High",
+      "extra-high": "Extra high",
+      "hint": "Higher contrast improves readability for low-vision users."
+    },
+    "actions": {
+      "reset": "Reset to default",
+      "sync": "Sync across devices",
+      "cancelPreview": "Cancel preview",
+      "applyPreview": "Apply preview"
+    },
+    "sync": {
+      "idle": "Not synced",
+      "syncing": "Syncing…",
+      "synced": "Synced across devices",
+      "error": "Sync failed",
+      "offline": "Sync unavailable while offline"
+    }
   }
 }

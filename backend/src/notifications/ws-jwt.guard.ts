@@ -15,7 +15,7 @@ function extractBearer(authorization: unknown): string | undefined {
 
 @Injectable()
 export class WsJwtGuard implements CanActivate {
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(protected readonly jwtService: JwtService) {}
 
   canActivate(context: ExecutionContext): boolean {
     const client = context.switchToWs().getClient<Socket>();
@@ -48,5 +48,23 @@ export class WsJwtGuard implements CanActivate {
       }
       throw new WsException('Unauthorized');
     }
+  }
+}
+
+@Injectable()
+export class OptionalWsJwtGuard extends WsJwtGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const client = context.switchToWs().getClient<Socket>();
+    const token = this.extractToken(client);
+
+    if (!token) {
+      client.data.isAnonymous = true;
+      client.data.user = undefined;
+      return true;
+    }
+
+    const verified = this.verifyAndStore(client, token);
+    client.data.isAnonymous = false;
+    return verified;
   }
 }

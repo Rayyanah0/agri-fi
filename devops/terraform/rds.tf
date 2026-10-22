@@ -103,9 +103,29 @@ resource "aws_secretsmanager_secret" "rds_credentials" {
   }
 }
 
+resource "aws_secretsmanager_secret_version" "rds_credentials" {
+  secret_id = aws_secretsmanager_secret.rds_credentials.id
+
+  secret_string = jsonencode({
+    engine               = "postgres"
+    host                 = aws_db_instance.postgres.address
+    username             = var.db_username
+    password             = var.db_password
+    dbname               = var.db_name
+    port                 = 5432
+    dbInstanceIdentifier = aws_db_instance.postgres.identifier
+  })
+
+  lifecycle {
+    ignore_changes = [secret_string, version_stages]
+  }
+}
+
 resource "aws_secretsmanager_secret_rotation" "rds_credentials" {
   secret_id           = aws_secretsmanager_secret.rds_credentials.id
   rotation_lambda_arn = var.rds_rotation_lambda_arn
+
+  depends_on = [aws_secretsmanager_secret_version.rds_credentials]
 
   rotation_rules {
     automatically_after_days = 30

@@ -5,10 +5,28 @@
 ```mermaid
 erDiagram
     %% Domain: USERS
+    AnnualInvestmentTotal {
+        string id PK
+    }
     Achievement {
         string id PK
     }
+    AMMLiquidityPosition {
+        string id PK
+    }
+    AMMMiningReward {
+        string id PK
+    }
+    AMMPool {
+        string id PK
+    }
+    AMMSwap {
+        string id PK
+    }
     ApiKey {
+        string id PK
+    }
+    BiometricCredential {
         string id PK
     }
     KycSubmission {
@@ -23,7 +41,43 @@ erDiagram
     User {
         string id PK
     }
+    ChatAttachment {
+        string id PK
+    }
+    ChatConversation {
+        string id PK
+    }
+    ChatMessage {
+        string id PK
+    }
+    ChatParticipant {
+        string id PK
+    }
+    ChatbotConversation {
+        string id PK
+    }
+    CollaborationPermission {
+        string id PK
+    }
+    CollaborationSession {
+        string id PK
+    }
+    DocumentVersion {
+        string id PK
+    }
+    SignatureRequest {
+        string id PK
+    }
+    EdgeNode {
+        string id PK
+    }
+    EdgeSyncRecord {
+        string id PK
+    }
     InvestorEmailSequence {
+        string id PK
+    }
+    KycJurisdictionRule {
         string id PK
     }
     NotificationPreference {
@@ -32,10 +86,61 @@ erDiagram
     NotificationEntity {
         string id PK
     }
+    PushSubscriptionEntity {
+        string id PK
+    }
+    OracleFeed {
+        string id PK
+    }
+    OracleObservation {
+        string id PK
+    }
+    CalendarConnection {
+        string id PK
+    }
+    CalendarEvent {
+        string id PK
+    }
+    FeatureFlagAudit {
+        string id PK
+    }
+    FeatureFlag {
+        string id PK
+    }
+    Shard {
+        string id PK
+    }
+    ApiUsageEvent {
+        string id PK
+    }
+    PartnerApiUsage {
+        string id PK
+    }
+    NettingCycle {
+        string id PK
+    }
+    NettingObligation {
+        string id PK
+    }
+    ContractDispute {
+        string id PK
+    }
+    FarmerCreditScoreDispute {
+        string id PK
+    }
     FarmerCreditScoreHistory {
         string id PK
     }
+    WatchlistItem {
+        string id PK
+    }
     %% Domain: DEALS
+    MilestoneComment {
+        string id PK
+    }
+    MilestoneVerification {
+        string id PK
+    }
     ShipmentMilestone {
         string id PK
     }
@@ -58,10 +163,13 @@ erDiagram
         string id PK
     }
     %% Domain: INVESTMENTS
+    MilestoneReleaseRecord {
+        string id PK
+    }
     PaymentDistribution {
         string id PK
     }
-    TransactionLog {
+    AutoInvestPlan {
         string id PK
     }
     InvestmentEvent {
@@ -70,7 +178,13 @@ erDiagram
     Investment {
         string id PK
     }
-    SellOrder {
+    LiquiditySnapshot {
+        string id PK
+    }
+    PortfolioVaRLimit {
+        string id PK
+    }
+    SecondaryOrder {
         string id PK
     }
     SecondaryTrade {
@@ -89,7 +203,7 @@ erDiagram
     StellarHistory {
         string id PK
     }
-    TransactionLog {
+    UnrecognisedPayment {
         string id PK
     }
     %% Domain: COMPLIANCE
@@ -106,6 +220,12 @@ erDiagram
         string id PK
     }
     ComplianceReport {
+        string id PK
+    }
+    RegulatoryRuleExecution {
+        string id PK
+    }
+    RegulatoryRule {
         string id PK
     }
     AdminAction {
@@ -126,24 +246,68 @@ erDiagram
     SecurityIpBlock {
         string id PK
     }
+    TransactionLog {
+        string id PK
+    }
+    RemediationAction {
+        string id PK
+    }
+    RemediationPolicy {
+        string id PK
+    }
+    RemediationScript {
+        string id PK
+    }
+    SelfHealingIssue {
+        string id PK
+    }
     WebhookSubscription {
         string id PK
     }
 
     %% Relationships
+    AnnualInvestmentTotal }o--|| User : "ManyToOne"
     Achievement }o--|| User : "ManyToOne"
+    AMMLiquidityPosition }o--|| AMMPool : "ManyToOne"
+    AMMLiquidityPosition }o--|| User : "ManyToOne"
+    AMMMiningReward }o--|| AMMPool : "ManyToOne"
+    AMMMiningReward }o--|| User : "ManyToOne"
+    AMMPool }o--|| TradeDeal : "ManyToOne"
+    AMMPool }o--|| User : "ManyToOne"
+    AMMPool ||--o{ AMMLiquidityPosition : "OneToMany"
+    AMMPool ||--o{ AMMSwap : "OneToMany"
+    AMMSwap }o--|| AMMPool : "ManyToOne"
+    AMMSwap }o--|| User : "ManyToOne"
+    BiometricCredential }o--|| User : "ManyToOne"
     KycSubmission }o--|| User : "ManyToOne"
     ReferralCode }o--|| User : "ManyToOne"
     Referral }o--|| User : "ManyToOne"
-    InvestorEmailSequence }o--|| User : "ManyToOne"
-    PaymentDistribution }o--|| TradeDeal : "ManyToOne"
+    ChatAttachment }o--|| ChatMessage : "ManyToOne"
+    ChatConversation ||--o{ ChatParticipant : "OneToMany"
+    ChatConversation ||--o{ ChatMessage : "OneToMany"
+    ChatMessage }o--|| ChatConversation : "ManyToOne"
+    ChatMessage }o--|| User : "ManyToOne"
+    ChatMessage }o--|| ChatMessage : "ManyToOne"
+    ChatMessage ||--o{ ChatAttachment : "OneToMany"
+    ChatParticipant }o--|| ChatConversation : "ManyToOne"
+    ChatParticipant }o--|| User : "ManyToOne"
     TransactionLog }o--|| User : "ManyToOne"
     TransactionLog }o--|| TradeDeal : "ManyToOne"
+    SignatureRequest }o--|| Document : "ManyToOne"
+    SignatureRequest }o--|| User : "ManyToOne"
+    InvestorEmailSequence }o--|| User : "ManyToOne"
+    MilestoneReleaseRecord }o--|| TradeDeal : "ManyToOne"
+    PaymentDistribution }o--|| TradeDeal : "ManyToOne"
+    AutoInvestPlan }o--|| User : "ManyToOne"
     Investment }o--|| TradeDeal : "ManyToOne"
     Investment }o--|| User : "ManyToOne"
+    SecondaryOrder }o--|| User : "ManyToOne"
     SecondaryTrade }o--|| User : "ManyToOne"
     NotificationPreference }o--|| User : "ManyToOne"
     NotificationEntity }o--|| User : "ManyToOne"
+    PushSubscriptionEntity }o--|| User : "ManyToOne"
+    MilestoneComment }o--|| ShipmentMilestone : "ManyToOne"
+    ContractDispute }o--|| TradeDeal : "ManyToOne"
     DealCoFarmer }o--|| TradeDeal : "ManyToOne"
     DealCoFarmer }o--|| User : "ManyToOne"
     DealHealthAlert }o--|| TradeDeal : "ManyToOne"
@@ -152,5 +316,7 @@ erDiagram
     TradeDeal }o--|| User : "ManyToOne"
     TradeDeal ||--o{ Document : "OneToMany"
     TradeDeal ||--o{ Investment : "OneToMany"
+    WatchlistItem }o--|| User : "ManyToOne"
+    WatchlistItem }o--|| TradeDeal : "ManyToOne"
 ```
 

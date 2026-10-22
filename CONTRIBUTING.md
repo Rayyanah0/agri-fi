@@ -16,8 +16,9 @@ Thanks for your interest in contributing. This guide covers everything you need 
 8. [Code Style](#code-style)
 9. [Branching and Commits](#branching-and-commits)
 10. [Submitting a Pull Request](#submitting-a-pull-request)
-11. [Architecture Notes](#architecture-notes)
-12. [First Contribution Journey](#first-contribution-journey)
+11. [Webhooks and raw request bodies](#webhooks-and-raw-request-bodies)
+12. [Architecture Notes](#architecture-notes)
+13. [First Contribution Journey](#first-contribution-journey)
 
 ---
 
@@ -323,6 +324,32 @@ For deeper context, read the [project overview](./README.md), [production-readin
 
 ---
 
+## Webhooks and raw request bodies
+
+Webhook handlers (`src/auth/webhook-signature.guard.ts`, the SEP-24 callback) verify
+HMAC-SHA256 signatures over the **exact bytes** the sender signed. That is only possible
+because `main.ts` bootstraps Nest with `rawBody: true`, which preserves the untouched
+request body on `req.rawBody` before JSON parsing.
+
+**Do not remove `rawBody: true` from `NestFactory.create`, and do not register a global
+body parser that consumes `/webhooks/*` or `/stellar/sep24/*` requests before the guard
+runs.** Signature checks would then fail for every legitimate caller, and the failure is
+silent at the application level — it looks like a bad signature, not a configuration bug.
+
+Rules for anything sitting in front of the backend (nginx, CloudFront, load balancers,
+API gateways):
+
+- Forward the body **unmodified** — no reordering, no pretty-printing, no re-encoding.
+- Preserve `Content-Length`; do not switch chunked requests to a different framing.
+- Do **not** gzip/compress the body before it reaches the app (the signature covers the
+  uncompressed payload).
+- Do not buffer-and-replay webhook bodies through a transformer or WAF rewrite rule.
+
+See [`docs/runbooks/webhook-delivery.md`](docs/runbooks/webhook-delivery.md) for the
+operator checklist and troubleshooting steps.
+
+---
+
 ## Architectural Decision Records (ADRs)
 
 Agri-Fi maintains a strict log of Architecture Decision Records in [`docs/adr/`](./docs/adr/README.md).
@@ -343,3 +370,9 @@ Whenever you submit a Pull Request that introduces or alters significant archite
 - **Escrow secret keys** are stored encrypted at rest using AES-256. Never log or expose them.
 - All Stellar interactions target **testnet** during development. Switch to mainnet by setting `STELLAR_NETWORK=mainnet` and updating `STELLAR_HORIZON_URL`.
 - The `StellarService` is a global NestJS provider — inject it wherever blockchain operations are needed.
+- **Document uploads fail closed.** When `CLAM_SCAN_ENABLED=true` (forced in production)
+  and ClamAV is unreachable or times out, `POST /v1/documents` returns `503` with
+  `code: SCAN_UNAVAILABLE` and the file is never stored. A scanner outage disables
+  uploads rather than silently skipping the scan; `/v1/health/detail` reports
+  `documents.scan_available=false`. See
+  [`backend/docs/document-scanning.md`](backend/docs/document-scanning.md).

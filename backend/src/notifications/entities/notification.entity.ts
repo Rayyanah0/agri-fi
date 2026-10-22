@@ -10,7 +10,12 @@ import {
 } from 'typeorm';
 import { User } from '../../auth/entities/user.entity';
 
-export type NotificationType = 'payment' | 'kyc' | 'deal' | 'alert';
+export type NotificationType =
+  | 'payment'
+  | 'kyc'
+  | 'deal'
+  | 'alert'
+  | 'collaboration';
 
 @Entity('notifications')
 export class NotificationEntity {

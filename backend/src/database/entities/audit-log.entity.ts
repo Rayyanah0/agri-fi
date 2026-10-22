@@ -31,6 +31,23 @@ export class AuditLog {
   @Column({ name: 'user_id', nullable: true })
   userId: string | null;
 
+  @Column({ name: 'log_type', type: 'varchar', default: 'financial_transaction' })
+  logType: string;
+
+  @Column({
+    name: 'retention_period',
+    type: 'varchar',
+    default: '7 years',
+  })
+  retentionPeriod: string;
+
+  @Column({
+    name: 'retention_until',
+    type: 'timestamptz',
+    default: () => "(now() + interval '7 years')",
+  })
+  retentionUntil: Date;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }

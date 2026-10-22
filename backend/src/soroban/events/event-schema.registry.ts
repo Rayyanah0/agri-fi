@@ -226,15 +226,100 @@ export const EVENT_SCHEMAS_V1: Record<string, ContractEventSchema> = {
       { name: 'revenueAmount', type: 'i128', description: 'Total revenue disbursed' },
     ],
   },
+  // Dispute lifecycle (#1004). The disputed milestone index travels in event
+  // topic[1]; the fields below describe the event's data payload.
   'farm_campaign.dispute_raised': {
     topic: 'farm_campaign.dispute_raised',
     contract: 'farm_campaign',
     event: 'dispute_raised',
     version: 'v1',
-    description: 'Emitted when a participant raises an arbitration dispute',
+    description:
+      'Emitted when a party raises a dispute, freezing the milestone and ' +
+      'opening the arbitrator voting window',
     fields: [
-      { name: 'milestoneIndex', type: 'u32', description: 'Disputed milestone' },
-      { name: 'caller', type: 'Address', description: 'Dispute initiator' },
+      {
+        name: 'milestoneIndex',
+        type: 'u32',
+        description: 'Disputed milestone (topic[1])',
+      },
+      {
+        name: 'caller',
+        type: 'Address',
+        description: 'Dispute initiator',
+      },
+      {
+        name: 'votingDeadline',
+        type: 'u64',
+        description: 'Last ledger timestamp at which a vote still counts',
+      },
+    ],
+  },
+  'farm_campaign.dispute_evidence': {
+    topic: 'farm_campaign.dispute_evidence',
+    contract: 'farm_campaign',
+    event: 'dispute_evidence',
+    version: 'v1',
+    description: 'Emitted when a dispute party attaches an evidence reference',
+    fields: [
+      {
+        name: 'milestoneIndex',
+        type: 'u32',
+        description: 'Disputed milestone (topic[1])',
+      },
+      {
+        name: 'submitter',
+        type: 'Address',
+        description: 'Party that attached the evidence',
+      },
+      {
+        name: 'uri',
+        type: 'String',
+        description: 'Document reference for the evidence',
+      },
+    ],
+  },
+  'farm_campaign.dispute_vote': {
+    topic: 'farm_campaign.dispute_vote',
+    contract: 'farm_campaign',
+    event: 'dispute_vote',
+    version: 'v1',
+    description: 'Emitted when an arbitrator votes inside the voting window',
+    fields: [
+      {
+        name: 'milestoneIndex',
+        type: 'u32',
+        description: 'Disputed milestone (topic[1])',
+      },
+      {
+        name: 'voter',
+        type: 'Address',
+        description: 'Arbitrator that voted',
+      },
+      {
+        name: 'release',
+        type: 'bool',
+        description: 'true votes to release the tranche, false to refund',
+      },
+    ],
+  },
+  'farm_campaign.dispute_verdict': {
+    topic: 'farm_campaign.dispute_verdict',
+    contract: 'farm_campaign',
+    event: 'dispute_verdict',
+    version: 'v1',
+    description:
+      'Emitted once a quorum or the closed voting window fixes the outcome',
+    fields: [
+      {
+        name: 'milestoneIndex',
+        type: 'u32',
+        description: 'Disputed milestone (topic[1])',
+      },
+      {
+        name: 'release',
+        type: 'bool',
+        description: 'true = release to farmer, false = refund investors',
+      },
     ],
   },
   'farm_campaign.dispute_resolved': {
@@ -242,10 +327,20 @@ export const EVENT_SCHEMAS_V1: Record<string, ContractEventSchema> = {
     contract: 'farm_campaign',
     event: 'dispute_resolved',
     version: 'v1',
-    description: 'Emitted when arbitrator resolves a disputed milestone',
+    description:
+      'Emitted when the dispute verdict is executed and the milestone is ' +
+      'unblocked',
     fields: [
-      { name: 'milestoneIndex', type: 'u32', description: 'Milestone resolved' },
-      { name: 'approved', type: 'bool', description: 'Arbitration decision' },
+      {
+        name: 'milestoneIndex',
+        type: 'u32',
+        description: 'Milestone resolved (topic[1])',
+      },
+      {
+        name: 'release',
+        type: 'bool',
+        description: 'Executed arbitration decision',
+      },
     ],
   },
   'farm_campaign.arbitrator_updated': {
@@ -255,7 +350,27 @@ export const EVENT_SCHEMAS_V1: Record<string, ContractEventSchema> = {
     version: 'v1',
     description: 'Emitted when designated arbitrator address changes',
     fields: [
-      { name: 'newArbitrator', type: 'Address', description: 'New arbitrator address' },
+      {
+        name: 'newArbitrator',
+        type: 'Address',
+        description: 'New arbitrator address',
+      },
+    ],
+  },
+  'farm_campaign.arbitrator_pool_set': {
+    topic: 'farm_campaign.arbitrator_pool_set',
+    contract: 'farm_campaign',
+    event: 'arbitrator_pool_set',
+    version: 'v1',
+    description:
+      'Emitted when the admin replaces the set of addresses allowed to vote ' +
+      'on disputes',
+    fields: [
+      {
+        name: 'poolSize',
+        type: 'u32',
+        description: 'Number of arbitrators in the new pool',
+      },
     ],
   },
   'farm_campaign.refunded': {
@@ -440,6 +555,13 @@ export const LEGACY_EVENT_TOPIC_MAP: Record<string, string> = {
   frozen: 'escrow.frozen',
   unfrozen: 'escrow.unfrozen',
   batch_refund: 'escrow.batch_refunded',
+  // The FarmCampaign contract emits dispute topics un-namespaced (#1004).
+  dispute_raised: 'farm_campaign.dispute_raised',
+  dispute_evidence: 'farm_campaign.dispute_evidence',
+  dispute_vote: 'farm_campaign.dispute_vote',
+  dispute_verdict: 'farm_campaign.dispute_verdict',
+  dispute_resolved: 'farm_campaign.dispute_resolved',
+  arbitrator_pool_set: 'farm_campaign.arbitrator_pool_set',
 };
 
 /**

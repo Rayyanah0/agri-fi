@@ -27,6 +27,23 @@ export class SystemAuditLog {
   @Column({ name: 'request_details', type: 'jsonb', nullable: true })
   requestDetails: Record<string, any> | null;
 
+  @Column({ name: 'log_type', type: 'varchar', default: 'operational' })
+  logType: string;
+
+  @Column({
+    name: 'retention_period',
+    type: 'varchar',
+    default: '1 year',
+  })
+  retentionPeriod: string;
+
+  @Column({
+    name: 'retention_until',
+    type: 'timestamptz',
+    default: () => "(now() + interval '1 year')",
+  })
+  retentionUntil: Date;
+
   @CreateDateColumn({ name: 'timestamp' })
   timestamp: Date;
 

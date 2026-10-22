@@ -7,6 +7,7 @@ import { Repository } from 'typeorm';
 import type { Request } from 'express';
 import { User } from './entities/user.entity';
 import { TokenBlocklistService } from './token-blocklist.service';
+import { BehavioralRiskService } from './behavioral-risk.service';
 
 export interface JwtPayload {
   sub: string;
@@ -28,6 +29,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     config: ConfigService,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
     private readonly tokenBlocklistService: TokenBlocklistService,
+    private readonly behavioralRiskService: BehavioralRiskService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -56,6 +58,20 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if ((payload.tokenVersion ?? 0) !== (user.tokenVersion ?? 0)) {
       throw new UnauthorizedException('Token no longer valid.');
     }
+
+    // Adaptive authentication: consult the behavioral risk decision. A
+    // high-risk signal (or an explicit re-authentication flag attached to the
+    // request by upstream behavioral middleware) forces re-authentication.
+    const requiresReauth =
+      (req as Request & { behavioralReauthRequired?: boolean })
+        .behavioralReauthRequired === true ||
+      this.behavioralRiskService.requiresReauthentication(user.id);
+    if (requiresReauth) {
+      throw new UnauthorizedException(
+        'Re-authentication required due to elevated behavioral risk.',
+      );
+    }
+
     return user;
   }
 }

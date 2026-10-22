@@ -57,6 +57,7 @@ describe('EscrowService', () => {
     mockQueueService = {
       emit: jest.fn(),
       enqueueDealCleanup: jest.fn().mockResolvedValue(undefined),
+      enqueueEscrowReleaseNotify: jest.fn().mockResolvedValue(undefined),
     } as any;
 
     mockConfigService = {
@@ -164,7 +165,7 @@ describe('EscrowService', () => {
         (cb: (m: typeof mockManager) => Promise<unknown>) => cb(mockManager),
       );
       mockConfigService.get.mockReturnValue('platform-wallet');
-      mockStellarService.decryptSecret.mockReturnValue(
+      mockStellarService.decryptSecret.mockResolvedValue(
         'decrypted-escrow-secret',
       );
       mockStellarService.releaseEscrow.mockResolvedValue(['stellar-tx-123']);
@@ -227,6 +228,11 @@ describe('EscrowService', () => {
       expect(mockManager.update).toHaveBeenCalledWith(TradeDeal, tradeDealId, {
         status: 'completed',
       });
+
+      // Verify escrow.release_notify was enqueued after the transaction (Issue #953)
+      expect(mockQueueService.enqueueEscrowReleaseNotify).toHaveBeenCalledWith(
+        expect.objectContaining({ dealId: tradeDealId }),
+      );
     });
 
     it('should handle Stellar failure and send admin alert', async () => {

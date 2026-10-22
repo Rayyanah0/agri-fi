@@ -3,13 +3,72 @@ import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import * as amqp from 'amqplib';
 import { EscrowConsumer } from '../src/escrow/escrow.consumer';
 import { EscrowService } from '../src/escrow/escrow.service';
+import { QueueProcessor } from '../src/queue/queue.processor';
 import { QueueTopologyService } from '../src/queue/queue-topology.service';
+import {
+  ROUTING_KEY_OWNERS,
+  routingKeysForConsumer,
+} from '../src/queue/queue.routing-key-ownership';
+import * as queueConstants from '../src/queue/queue.constants';
+import * as queueDlqConstants from '../src/queue/queue.dlq.constants';
 import {
   ESCROW_QUEUE_DLX,
   ESCROW_QUEUE_DLQ,
   ESCROW_QUEUE_NAME,
   dlxQueueOptions,
 } from '../src/queue/queue.dlq.constants';
+
+describe('RabbitMQ routing key ownership (architecture)', () => {
+  const declaredRoutingKeys = (): string[] => {
+    const keys = new Set<string>();
+
+    for (const value of Object.values(queueConstants)) {
+      if (typeof value === 'string') {
+        keys.add(value);
+      }
+    }
+
+    for (const value of Object.values(queueDlqConstants)) {
+      if (typeof value === 'string') {
+        keys.add(value);
+      }
+    }
+
+    return Array.from(keys);
+  };
+
+  it('registers every routing key with exactly one consumer class', () => {
+    const keys = declaredRoutingKeys();
+    expect(keys.length).toBeGreaterThan(0);
+
+    for (const key of keys) {
+      const owners = ROUTING_KEY_OWNERS[key] ?? [];
+      expect(owners).toHaveLength(1);
+    }
+  });
+
+  it('does not register the same routing key with more than one consumer', () => {
+    const seen = new Map<string, string>();
+
+    for (const consumer of [QueueProcessor, EscrowConsumer]) {
+      for (const key of routingKeysForConsumer(consumer)) {
+        const existing = seen.get(key);
+        expect(existing).toBeUndefined();
+        seen.set(key, consumer.name);
+      }
+    }
+  });
+
+  it('assigns escrow event handling to EscrowConsumer only', () => {
+    const escrowKeys = routingKeysForConsumer(EscrowConsumer);
+    expect(escrowKeys.length).toBeGreaterThan(0);
+
+    const queueKeys = new Set(routingKeysForConsumer(QueueProcessor));
+    for (const key of escrowKeys) {
+      expect(queueKeys.has(key)).toBe(false);
+    }
+  });
+});
 
 describe('EscrowConsumer DLQ handling (E2E)', () => {
   const rabbitUrl = process.env.RABBITMQ_URL || process.env.CI_RABBITMQ;

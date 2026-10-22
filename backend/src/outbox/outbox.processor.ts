@@ -80,7 +80,9 @@ export class OutboxProcessor implements OnModuleInit, OnModuleDestroy {
 
   private async processEvent(event: OutboxEntity): Promise<void> {
     try {
-      const encryptedPayload = encryptPayload(event.payload);
+      // Bind the event type as AAD, matching how QueueService publishes and
+      // how the consumer verifies the payload.
+      const encryptedPayload = encryptPayload(event.payload, event.eventType);
 
       await this.client.emit(event.eventType, encryptedPayload).toPromise();
 

@@ -7,6 +7,11 @@ import {
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { AuditService } from './audit.service';
+import {
+  auditRetentionPeriod,
+  auditRetentionUntil,
+  classifyAuditLog,
+} from './audit-retention-policy';
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
@@ -22,6 +27,7 @@ export class AuditInterceptor implements NestInterceptor {
     }
 
     const route = `${req.method || 'GET'} ${req.originalUrl || req.url || '/'}`;
+    const logType = classifyAuditLog(route);
     const actorId =
       req.user?.id || req.user?.sub || req.headers?.['x-actor-id'] || null;
     const actorRole =
@@ -42,30 +48,32 @@ export class AuditInterceptor implements NestInterceptor {
       tap({
         next: () => {
           const statusCode = res?.statusCode || 200;
-          this.auditService
-            .logEvent({
-              actorId,
-              actorRole,
-              route,
-              statusCode,
-              requestDetails,
-            })
-            .catch(() => {});
+          void this.auditService.logEvent({
+            actorId,
+            actorRole,
+            route,
+            statusCode,
+            logType,
+            retentionPeriod: auditRetentionPeriod(logType),
+            retentionUntil: auditRetentionUntil(logType),
+            requestDetails,
+          });
         },
         error: (err) => {
           const statusCode = err?.status || err?.statusCode || 500;
-          this.auditService
-            .logEvent({
-              actorId,
-              actorRole,
-              route,
-              statusCode,
-              requestDetails: {
-                ...requestDetails,
-                error: err?.message || String(err),
-              },
-            })
-            .catch(() => {});
+          void this.auditService.logEvent({
+            actorId,
+            actorRole,
+            route,
+            statusCode,
+            logType,
+            retentionPeriod: auditRetentionPeriod(logType),
+            retentionUntil: auditRetentionUntil(logType),
+            requestDetails: {
+              ...requestDetails,
+              error: err?.message || String(err),
+            },
+          });
         },
       }),
     );

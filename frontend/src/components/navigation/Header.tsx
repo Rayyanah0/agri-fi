@@ -70,7 +70,10 @@ export const Header: React.FC<HeaderProps> = ({ user, onLogout }) => {
   const navLinks = [
     { label: t('nav.dashboard'), href: `/dashboard/${user.role}` },
     { label: t('nav.marketplace'), href: '/marketplace' },
+    { label: 'Yield Farming', href: '/yield-farming' },
+    { label: 'Factoring', href: '/invoice-factoring' },
     { label: t('nav.documents'), href: '/dashboard/documents' },
+    { label: 'Messages', href: '/dashboard/messages' },
     { label: t('nav.settings'), href: '/settings' },
   ];
 

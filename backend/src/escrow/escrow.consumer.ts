@@ -1,5 +1,7 @@
-import { Controller, Logger, OnApplicationShutdown } from '@nestjs/common';
+import { Controller, Logger, OnApplicationShutdown, Optional } from '@nestjs/common';
 import { Ctx, EventPattern, Payload, RmqContext } from '@nestjs/microservices';
+import { InjectMetric } from '@willsoto/nestjs-prometheus';
+import { Counter } from 'prom-client';
 import { EscrowService } from './escrow.service';
 import { IdempotencyService } from '../queue/idempotency.service';
 import {
@@ -7,14 +9,29 @@ import {
   isTransientQueueError,
 } from '../queue/retry-policy';
 import { ESCROW_MAX_DELIVERY_ATTEMPTS } from '../queue/queue.dlq.constants';
+import { ESCROW_ROUTING_KEYS } from '../queue/queue-ownership.constants';
 
 interface DealDeliveredPayload {
   tradeDealId: string;
 }
 
 /**
- * Consumes deal.delivered events from the escrow queue and triggers the
- * escrow release flow via EscrowService.
+ * Canonical owner of all escrow routing keys.
+ *
+ * Ownership decision (#959): escrow event handling lives here, in `escrow/`,
+ * and NOT in `QueueProcessor`. `QueueProcessor` previously registered
+ * overlapping handlers for the same escrow routing keys, which allowed two
+ * consumers to double-process a delivery (two releases, two notifications) or
+ * fight over acking during redeploys / multi-prefetch delivery. Those duplicate
+ * handlers have been removed; every escrow `@EventPattern` is registered in
+ * this class and nowhere else.
+ *
+ * The single-ownership invariant is declared in `queue/queue-ownership.constants.ts`
+ * (routing key → owning consumer class) and guarded by an architecture test
+ * that asserts each routing key has exactly one subscription.
+ *
+ * Routing keys owned by this consumer:
+ *   • deal.delivered — triggers the escrow release flow via EscrowService.
  *
  * Retry strategy — broker-level (x-death headers):
  *   • Each failure nacks with requeue=true, causing RabbitMQ to redeliver.
@@ -40,6 +57,9 @@ export class EscrowConsumer implements OnApplicationShutdown {
   constructor(
     private readonly escrowService: EscrowService,
     private readonly idempotency: IdempotencyService,
+    @Optional()
+    @InjectMetric('escrow_release_dlq_total')
+    private readonly dlqTotal?: Counter<string>,
   ) {}
 
   // ── Shutdown hook (#696) ────────────────────────────────────────────────────
@@ -134,7 +154,7 @@ export class EscrowConsumer implements OnApplicationShutdown {
     }
   }
 
-  @EventPattern('deal.delivered')
+  @EventPattern(ESCROW_ROUTING_KEYS.DEAL_DELIVERED)
   handleDealDelivered(
     @Payload() payload: DealDeliveredPayload,
     @Ctx() context: RmqContext,
@@ -151,20 +171,19 @@ export class EscrowConsumer implements OnApplicationShutdown {
       return;
     }
 
-    const job = this.processDealDelivered(
-      payload,
-      channel,
-      originalMsg,
-    ).finally(() => this.activeJobs.delete(job));
+    const job = this.processDealDelivered(payload, context).finally(() =>
+      this.activeJobs.delete(job),
+    );
 
     this.activeJobs.add(job);
   }
 
   private async processDealDelivered(
     payload: DealDeliveredPayload,
-    channel: any,
-    originalMsg: any,
+    context: RmqContext,
   ): Promise<void> {
+    const channel = context.getChannelRef();
+    const originalMsg = context.getMessage();
     const parsed = this.parsePayload(payload, context);
     if (!parsed) return;
 
@@ -212,6 +231,7 @@ export class EscrowConsumer implements OnApplicationShutdown {
             `Routing to DLQ. Last error: ${err.message}`,
           err.stack,
         );
+        this.dlqTotal?.inc({ reason: 'max_attempts_exhausted' });
         // nack without requeue → RabbitMQ dead-letters to DLX → DLQ
         channel.nack(originalMsg, false, false);
         return;

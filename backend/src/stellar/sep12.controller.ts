@@ -18,6 +18,7 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
+import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { User } from '../auth/entities/user.entity';
 import {
@@ -34,6 +35,7 @@ export class Sep12Controller {
   constructor(private readonly sep12Service: Sep12Service) {}
 
   @Put('customer')
+  @Throttle({ kyc: {} })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Submit or update SEP-12 customer identity fields' })
   @ApiBody({
